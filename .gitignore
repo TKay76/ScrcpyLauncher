@@ -1,0 +1,5 @@
+ScrcpyLauncher.exe
+dist/
+recordings/
+scrcpy_launcher_settings.json
+*.zip

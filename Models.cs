@@ -1,0 +1,143 @@
+using System;
+using System.IO;
+using System.Text;
+using System.Web.Script.Serialization;
+
+namespace ScrcpyLauncher
+{
+    public class DeviceInfo
+    {
+        public string Serial { get; set; }
+        public string State { get; set; }
+        public string Model { get; set; }
+        public bool IsWifi { get; set; }
+
+        public string DisplayName
+        {
+            get
+            {
+                string conn = IsWifi ? "Wi-Fi" : "USB";
+                string name = string.IsNullOrWhiteSpace(Model) ? Serial : Model.Replace("_", " ");
+                if (State != "device")
+                    return string.Format("{0} ({1} · {2}) — {3}", name, conn, State, Serial);
+                return string.Format("{0} ({1}) — {2}", name, conn, Serial);
+            }
+        }
+
+        public override string ToString()
+        {
+            return DisplayName;
+        }
+    }
+
+    public class AppItem
+    {
+        public string Name { get; set; }
+        public string PackageName { get; set; }
+        public bool IsSystem { get; set; }
+
+        public string DisplayText
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(PackageName))
+                    return Name;
+                if (string.IsNullOrWhiteSpace(Name) || Name == PackageName)
+                    return PackageName;
+                return string.Format("{0}  ({1})", Name, PackageName);
+            }
+        }
+
+        public override string ToString()
+        {
+            return DisplayText;
+        }
+    }
+
+    public class LauncherSettings
+    {
+        public string CustomScrcpyDir { get; set; }
+        public string LastWirelessAddress { get; set; }
+        public string Codec { get; set; }
+        public int BitrateMbps { get; set; }
+        public int MaxSize { get; set; }
+        public int MaxFps { get; set; }
+        public string RenderDriver { get; set; }
+        public bool TurnScreenOff { get; set; }
+        public bool StayAwake { get; set; }
+        public bool UhidGamepad { get; set; }
+        public bool LowLatency { get; set; }
+        public bool NoAudio { get; set; }
+        public bool Fullscreen { get; set; }
+        public bool PrintFps { get; set; }
+        public bool UseVirtualDisplay { get; set; }
+        public string VirtualDisplaySpec { get; set; }
+        public bool NoVdSystemDecorations { get; set; }
+        public string StartAppPackage { get; set; }
+        public string RecordFolder { get; set; }
+
+        public LauncherSettings()
+        {
+            CustomScrcpyDir = "";
+            LastWirelessAddress = "";
+            Codec = "h264";
+            BitrateMbps = 20;
+            MaxSize = 0;
+            MaxFps = 0;
+            RenderDriver = "auto";
+            TurnScreenOff = true;
+            StayAwake = true;
+            UhidGamepad = true;
+            LowLatency = true;
+            NoAudio = false;
+            Fullscreen = false;
+            PrintFps = true;
+            UseVirtualDisplay = true;
+            VirtualDisplaySpec = "1920x1080";
+            NoVdSystemDecorations = true;
+            StartAppPackage = "";
+            RecordFolder = "";
+        }
+
+        public static string GetSettingsPath()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "scrcpy_launcher_settings.json");
+        }
+
+        public static LauncherSettings Load()
+        {
+            try
+            {
+                string path = GetSettingsPath();
+                if (File.Exists(path))
+                {
+                    string json = File.ReadAllText(path, Encoding.UTF8);
+                    var serializer = new JavaScriptSerializer();
+                    var loaded = serializer.Deserialize<LauncherSettings>(json);
+                    if (loaded != null)
+                        return loaded;
+                }
+            }
+            catch
+            {
+                // Ignore corrupted settings and fall back to defaults
+            }
+            return new LauncherSettings();
+        }
+
+        public void Save()
+        {
+            try
+            {
+                string path = GetSettingsPath();
+                var serializer = new JavaScriptSerializer();
+                string json = serializer.Serialize(this);
+                File.WriteAllText(path, json, new UTF8Encoding(false));
+            }
+            catch
+            {
+                // Ignore save errors (e.g. read-only directory)
+            }
+        }
+    }
+}
