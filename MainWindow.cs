@@ -174,9 +174,15 @@ namespace ScrcpyLauncher
         private TextBox _txtLog;
 
         // Keymap Tab Controls
+        private Border _bdKmModeWarning;
+        private TextBlock _txtKmModeWarning;
         private ComboBox _cmbKeyProfiles;
         private Button _btnImportKmp;
         private Button _btnSaveProfile;
+        private Button _btnSaveAsProfile;
+        private Button _btnRenameProfile;
+        private Button _btnDeleteProfile;
+        private Button _btnReloadProfiles;
         private CheckBox _chkKmJoy;
         private CheckBox _chkKmCam;
         private CheckBox _chkKmLeft;
@@ -193,6 +199,7 @@ namespace ScrcpyLauncher
         private ListBox _lstKmKeys;
         private TextBox _txtKmNewKey;
         private TextBox _txtKmNewLabel;
+        private CheckBox _chkKmNewWheel;
         private Button _btnKmAddKey;
         private Button _btnKmDelKey;
 
@@ -202,7 +209,7 @@ namespace ScrcpyLauncher
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.1.1 — Android 미러링";
+            Title = "Scrcpy Launcher v1.2 — Android 미러링";
             Width = 780;
             Height = 825;
             MinWidth = 720;
@@ -522,7 +529,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.1.1' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.2' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -740,23 +747,35 @@ namespace ScrcpyLauncher
 
     <TabItem Header='키 매핑' Style='{StaticResource PillTabItem}'>
       <StackPanel>
+        <!-- Mode Warning Banner (shown when Gamepad or Normal mode is active) -->
+        <Border x:Name='bdKmModeWarning' Background='#FFFBEB' BorderBrush='#FCD34D' BorderThickness='1' CornerRadius='8' Padding='11,7' Margin='0,0,0,8' Visibility='Collapsed'>
+          <TextBlock x:Name='txtKmModeWarning' Text='현재 키보드+마우스 모드가 아닙니다. 키 매핑 기능은 상단에서 [키보드 + 마우스] 모드를 선택했을 때 작동합니다. (게임패드 버튼 리매핑은 미지원)' FontSize='11.5' Foreground='#92400E' TextWrapping='Wrap'/>
+        </Border>
+
         <!-- Profile Card -->
         <Border Style='{StaticResource Card}'>
           <StackPanel>
             <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
               <Border Style='{StaticResource StepBadge}'><TextBlock Text='1' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock Text='키 매핑 프로파일 (LD플레이어 .kmp 호환)' Style='{StaticResource SectionTitle}'/>
+              <TextBlock Text='키 매핑 프로파일 (무기별 관리 · LD플레이어 .kmp 호환)' Style='{StaticResource SectionTitle}'/>
             </StackPanel>
-            <Grid>
+            <Grid Margin='0,0,0,6'>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width='*'/>
                 <ColumnDefinition Width='Auto'/>
                 <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='Auto'/>
               </Grid.ColumnDefinitions>
               <ComboBox x:Name='cmbKeyProfiles' Grid.Column='0' Margin='0,0,6,0'/>
-              <Button x:Name='btnImportKmp' Grid.Column='1' Content='LD .kmp 불러오기' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
-              <Button x:Name='btnSaveProfile' Grid.Column='2' Content='프로파일 저장' Style='{StaticResource SubBtn}'/>
+              <Button x:Name='btnReloadProfiles' Grid.Column='1' Content='새로고침' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
+              <Button x:Name='btnImportKmp' Grid.Column='2' Content='LD .kmp 불러오기' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
+              <Button x:Name='btnSaveProfile' Grid.Column='3' Content='저장' Style='{StaticResource SubBtn}'/>
             </Grid>
+            <StackPanel Orientation='Horizontal'>
+              <Button x:Name='btnSaveAsProfile' Content='다른 이름으로 저장' Style='{StaticResource SubBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
+              <Button x:Name='btnRenameProfile' Content='이름 변경' Style='{StaticResource SubBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
+              <Button x:Name='btnDeleteProfile' Content='프로파일 삭제' Style='{StaticResource SoftRedBtn}' Height='26' Padding='10,3' FontSize='11.5'/>
+            </StackPanel>
           </StackPanel>
         </Border>
 
@@ -820,11 +839,13 @@ namespace ScrcpyLauncher
                 <ColumnDefinition Width='*'/>
                 <ColumnDefinition Width='Auto'/>
                 <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='Auto'/>
               </Grid.ColumnDefinitions>
               <TextBox x:Name='txtKmNewKey' Grid.Column='0' IsReadOnly='True' Text='클릭 후 키 누름' Foreground='#64748B' Margin='0,0,6,0'/>
-              <TextBox x:Name='txtKmNewLabel' Grid.Column='1' Margin='0,0,6,0'/>
-              <Button x:Name='btnKmAddKey' Grid.Column='2' Content='+ 키 추가' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-              <Button x:Name='btnKmDelKey' Grid.Column='3' Content='선택 삭제' Style='{StaticResource SoftRedBtn}'/>
+              <TextBox x:Name='txtKmNewLabel' Grid.Column='1' Margin='0,0,8,0'/>
+              <CheckBox x:Name='chkKmNewWheel' Grid.Column='2' Content='휠 드래그' VerticalAlignment='Center' Margin='0,0,8,0'/>
+              <Button x:Name='btnKmAddKey' Grid.Column='3' Content='+ 키 추가' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
+              <Button x:Name='btnKmDelKey' Grid.Column='4' Content='선택 삭제' Style='{StaticResource SoftRedBtn}'/>
             </Grid>
           </StackPanel>
         </Border>
@@ -971,9 +992,15 @@ namespace ScrcpyLauncher
             _txtLog = (TextBox)root.FindName("txtLog");
 
             // Keymap controls
+            _bdKmModeWarning = (Border)root.FindName("bdKmModeWarning");
+            _txtKmModeWarning = (TextBlock)root.FindName("txtKmModeWarning");
             _cmbKeyProfiles = (ComboBox)root.FindName("cmbKeyProfiles");
             _btnImportKmp = (Button)root.FindName("btnImportKmp");
             _btnSaveProfile = (Button)root.FindName("btnSaveProfile");
+            _btnSaveAsProfile = (Button)root.FindName("btnSaveAsProfile");
+            _btnRenameProfile = (Button)root.FindName("btnRenameProfile");
+            _btnDeleteProfile = (Button)root.FindName("btnDeleteProfile");
+            _btnReloadProfiles = (Button)root.FindName("btnReloadProfiles");
             _chkKmJoy = (CheckBox)root.FindName("chkKmJoy");
             _chkKmCam = (CheckBox)root.FindName("chkKmCam");
             _chkKmLeft = (CheckBox)root.FindName("chkKmLeft");
@@ -990,6 +1017,7 @@ namespace ScrcpyLauncher
             _lstKmKeys = (ListBox)root.FindName("lstKmKeys");
             _txtKmNewKey = (TextBox)root.FindName("txtKmNewKey");
             _txtKmNewLabel = (TextBox)root.FindName("txtKmNewLabel");
+            _chkKmNewWheel = (CheckBox)root.FindName("chkKmNewWheel");
             _btnKmAddKey = (Button)root.FindName("btnKmAddKey");
             _btnKmDelKey = (Button)root.FindName("btnKmDelKey");
 
@@ -1059,15 +1087,22 @@ namespace ScrcpyLauncher
                     _hookEngine.SetProfile(_activeProfile);
                     if (_keymapOverlay != null) _keymapOverlay.SetProfile(_activeProfile);
                     UpdateModeSummary();
+                    UpdateUiStates();
                 }
             };
             _btnImportKmp.Click += BtnImportKmp_Click;
             _btnSaveProfile.Click += BtnSaveProfile_Click;
+            _btnSaveAsProfile.Click += BtnSaveAsProfile_Click;
+            _btnRenameProfile.Click += BtnRenameProfile_Click;
+            _btnDeleteProfile.Click += BtnDeleteProfile_Click;
+            _btnReloadProfiles.Click += (s, e) => { LoadKeymapProfiles(_activeProfile != null ? _activeProfile.Name : null); AppendLog("[키 매핑] 프로파일 목록을 새로고침했습니다."); };
             _btnKmStart.Click += BtnKmStart_Click;
             _btnKmStop.Click += (s, e) => StopKeymap();
             _btnKmEditOverlay.Click += BtnKmEditOverlay_Click;
             _btnKmAddKey.Click += BtnKmAddKey_Click;
             _btnKmDelKey.Click += BtnKmDelKey_Click;
+            AttachGuide(_chkKmNewWheel, "휠 드래그 키 (부위 조준 · 아이템/탄환 휠)", "체크 후 추가하면 키를 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다. (예: Tab 부위 조준, G 아이템/탄환 휠)");
+            AttachGuide(_chkKmRight, "우클릭 보조", "시점 고정 ON/OFF 모두에서 마우스 우클릭을 지정된 버튼(특수 공격·회피 등)으로 사용합니다. 일반 모드에서 좌클릭은 화면 터치로 그대로 유지됩니다.");
 
             _txtKmNewKey.PreviewKeyDown += (s, e) =>
             {
@@ -1279,7 +1314,7 @@ namespace ScrcpyLauncher
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == WM_INPUT && _hookEngine != null && _hookEngine.IsActive && _hookEngine.IsCameraLocked)
+            if (msg == WM_INPUT && _hookEngine != null && _hookEngine.IsActive && (_hookEngine.IsCameraLocked || _hookEngine.IsWheelDragging))
             {
                 uint headerSize = (uint)Marshal.SizeOf(typeof(RAWINPUTHEADER));
                 uint size = 0;
@@ -1755,18 +1790,21 @@ namespace ScrcpyLauncher
                 _txtModeSummary.Text = string.Format("적용 프리셋: {0}   ·   시점 토글: {1}   ·   F1: 화면 힌트 켜기/끄기",
                     pName, _activeProfile != null ? KeyNameHelper.GetName(_activeProfile.CameraToggleVk) : "Alt");
                 _txtModeSummary.Visibility = Visibility.Visible;
+                if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Collapsed;
             }
             else if (mode == "gamepad")
             {
                 _btnStart.Content = "▶  패드 미러링 시작";
                 _txtModeSummary.Text = "PC에 연결된 Xbox / PlayStation 컨트롤러가 물리 게임패드(-G)로 자동 인식됩니다.";
                 _txtModeSummary.Visibility = Visibility.Visible;
+                if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Visible;
             }
             else
             {
                 _btnStart.Content = "▶  일반 미러링 시작";
                 _txtModeSummary.Text = "일반 마우스 · 키보드 조작 모드입니다. (패드 · 키 매핑 미사용)";
                 _txtModeSummary.Visibility = Visibility.Visible;
+                if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Visible;
             }
         }
 
@@ -1799,6 +1837,9 @@ namespace ScrcpyLauncher
             _btnKmStart.IsEnabled = _adb.IsValid && hasDevice && running && !kmActive;
             _btnKmStop.IsEnabled = kmActive;
             _btnKmEditOverlay.IsEnabled = running && _activeProfile != null;
+            bool isCustomProfile = _activeProfile != null && !_activeProfile.IsBuiltIn;
+            if (_btnRenameProfile != null) _btnRenameProfile.IsEnabled = isCustomProfile;
+            if (_btnDeleteProfile != null) _btnDeleteProfile.IsEnabled = isCustomProfile;
             UpdateRecordButtonAppearance();
         }
 
@@ -2265,7 +2306,7 @@ namespace ScrcpyLauncher
             }
         }
 
-        private void LoadKeymapProfiles()
+        private void LoadKeymapProfiles(string selectName = null)
         {
             _keymapProfiles.Clear();
             _keymapProfiles.AddRange(KeymapProfile.GetBuiltInPresets());
@@ -2278,18 +2319,22 @@ namespace ScrcpyLauncher
             _cmbKeyProfiles.DisplayMemberPath = "Name";
             if (_cmbKeyProfiles.Items.Count > 0)
             {
+                string want = !string.IsNullOrEmpty(selectName)
+                    ? selectName
+                    : (_settings != null ? _settings.SelectedKeymapProfile : "");
                 int pick = 0;
-                if (_settings != null && !string.IsNullOrEmpty(_settings.SelectedKeymapProfile))
+                if (!string.IsNullOrEmpty(want))
                 {
                     for (int i = 0; i < _keymapProfiles.Count; i++)
                     {
-                        if (_keymapProfiles[i].Name == _settings.SelectedKeymapProfile) { pick = i; break; }
+                        if (_keymapProfiles[i].Name == want) { pick = i; break; }
                     }
                 }
                 _cmbKeyProfiles.SelectedIndex = pick;
                 _activeProfile = _keymapProfiles[pick];
                 ApplyProfileToUi();
                 UpdateModeSummary();
+                UpdateUiStates();
             }
         }
 
@@ -2430,17 +2475,84 @@ namespace ScrcpyLauncher
         {
             if (_activeProfile == null) return;
             SyncProfileFromUi();
-            var toSave = _activeProfile.IsBuiltIn
-                ? _activeProfile.Clone(_activeProfile.Name.Replace("[기본] ", "") + " (사용자)")
-                : _activeProfile;
-            toSave.SaveCustom();
             if (_activeProfile.IsBuiltIn)
             {
-                _keymapProfiles.Add(toSave);
-                _cmbKeyProfiles.Items.Add(toSave);
-                _cmbKeyProfiles.SelectedItem = toSave;
+                BtnSaveAsProfile_Click(sender, e);
+                return;
             }
-            AppendLog("[키 매핑] 프로파일 저장 완료: " + toSave.Name);
+            _activeProfile.SaveCustom();
+            AppendLog("[키 매핑] 프로파일 저장 완료: " + _activeProfile.Name);
+        }
+
+        private void BtnSaveAsProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (_activeProfile == null) return;
+            SyncProfileFromUi();
+            string defaultName = _activeProfile.Name.Replace("[기본] ", "") + " (커스텀)";
+            string newName = PromptTextDialog("다른 이름으로 프로파일 저장", "새 프로파일 이름을 입력하세요 (예: 태도, 헤비보우건, 활):", defaultName);
+            if (string.IsNullOrWhiteSpace(newName)) return;
+
+            var copy = _activeProfile.Clone(newName.Trim());
+            copy.SaveCustom();
+            LoadKeymapProfiles(copy.Name);
+            AppendLog("[키 매핑] 새 프로파일 저장 완료: " + copy.Name);
+        }
+
+        private void BtnRenameProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (_activeProfile == null || _activeProfile.IsBuiltIn) return;
+            string newName = PromptTextDialog("프로파일 이름 변경", "변경할 프로파일 이름을 입력하세요:", _activeProfile.Name);
+            if (string.IsNullOrWhiteSpace(newName) || newName.Trim() == _activeProfile.Name) return;
+
+            SyncProfileFromUi();
+            _activeProfile.Name = newName.Trim();
+            _activeProfile.SaveCustom();
+            LoadKeymapProfiles(_activeProfile.Name);
+            AppendLog("[키 매핑] 프로파일 이름 변경 완료: " + newName.Trim());
+        }
+
+        private void BtnDeleteProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (_activeProfile == null || _activeProfile.IsBuiltIn) return;
+            var res = MessageBox.Show(this, "'" + _activeProfile.Name + "' 프로파일을 삭제할까요?", "프로파일 삭제", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (res != MessageBoxResult.Yes) return;
+
+            string deletedName = _activeProfile.Name;
+            _activeProfile.DeleteCustomFile();
+            LoadKeymapProfiles();
+            AppendLog("[키 매핑] 프로파일 삭제 완료: " + deletedName);
+        }
+
+        private string PromptTextDialog(string title, string message, string defaultValue)
+        {
+            var win = new Window
+            {
+                Title = title,
+                Width = 390,
+                Height = 165,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                ResizeMode = ResizeMode.NoResize,
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F8FAFC")),
+                FontFamily = FontFamily
+            };
+
+            var stack = new StackPanel { Margin = new Thickness(16) };
+            stack.Children.Add(new TextBlock { Text = message, FontSize = 12, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B")), Margin = new Thickness(0, 0, 0, 8), TextWrapping = TextWrapping.Wrap });
+            var tb = new TextBox { Text = defaultValue ?? "", Height = 30, Padding = new Thickness(6, 4, 6, 4), FontSize = 12.5, Margin = new Thickness(0, 0, 0, 12) };
+            stack.Children.Add(tb);
+
+            var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var btnOk = new Button { Content = "확인", Width = 76, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 6, 0), Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2563EB")), Foreground = Brushes.White, BorderThickness = new Thickness(0), Cursor = Cursors.Hand };
+            var btnCancel = new Button { Content = "취소", Width = 76, Height = 28, IsCancel = true, Cursor = Cursors.Hand };
+            btnOk.Click += (s, ev) => { win.DialogResult = true; win.Close(); };
+            btnPanel.Children.Add(btnOk);
+            btnPanel.Children.Add(btnCancel);
+            stack.Children.Add(btnPanel);
+
+            win.Content = stack;
+            win.Loaded += (s, ev) => { tb.Focus(); tb.SelectAll(); };
+            return win.ShowDialog() == true ? tb.Text : null;
         }
 
         private void BtnKmEditOverlay_Click(object sender, RoutedEventArgs e)
@@ -2474,7 +2586,9 @@ namespace ScrcpyLauncher
                 VkCode = _pendingNewKeyVk,
                 Label = (_txtKmNewLabel.Text ?? "").Trim(),
                 X = 5000,
-                Y = 5000
+                Y = 5000,
+                IsWheelDrag = _chkKmNewWheel.IsChecked == true,
+                WheelRadius = 1500
             };
             _activeProfile.Keys.Add(item);
             RefreshKeyListBox();
@@ -2483,6 +2597,7 @@ namespace ScrcpyLauncher
             _txtKmNewKey.Text = "클릭 후 키 누름";
             _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#64748B"));
             _txtKmNewLabel.Text = "";
+            _chkKmNewWheel.IsChecked = false;
         }
 
         private void BtnKmDelKey_Click(object sender, RoutedEventArgs e)

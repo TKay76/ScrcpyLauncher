@@ -56,6 +56,17 @@ namespace ScrcpyLauncher
         private long _leftTouchId = 0;
         private long _rightTouchId = 0;
 
+        // Wheel-drag selection key state (e.g. Tab part targeting, G item/ammo wheel)
+        private long _wheelTouchId = 0;
+        private int _wheelVk = 0;
+        private double _wheelOriginX, _wheelOriginY;
+        private double _wheelCurX, _wheelCurY;
+        private int _wheelRadius = 1500;
+        private int _wheelAccumDx = 0;
+        private int _wheelAccumDy = 0;
+
+        public bool IsWheelDragging { get { return _wheelTouchId != 0; } }
+
         public event Action<bool> CameraLockChanged;
         public event Action<string> StatusMessage;
         public event Action HintToggleRequested;
@@ -195,8 +206,32 @@ namespace ScrcpyLauncher
             DateTime now = DateTime.UtcNow;
             lock (_stateLock)
             {
-                // 1. Flush accumulated mouse camera delta at smooth ~125Hz (zero WH_MOUSE_LL contention)
-                if (_cameraLocked && (_camAccumDx != 0 || _camAccumDy != 0))
+                // 1. Flush wheel-drag mouse delta (takes priority over camera while wheel key is held!)
+                if (_wheelTouchId != 0 && (_wheelAccumDx != 0 || _wheelAccumDy != 0))
+                {
+                    int wdx = _wheelAccumDx;
+                    int wdy = _wheelAccumDy;
+                    _wheelAccumDx = 0;
+                    _wheelAccumDy = 0;
+
+                    double nx = _wheelCurX + wdx * 12.0;
+                    double ny = _wheelCurY + wdy * 18.0;
+                    double offX = nx - _wheelOriginX;
+                    double offY = (ny - _wheelOriginY) / 1.778;
+                    double dist = Math.Sqrt(offX * offX + offY * offY);
+                    if (dist > _wheelRadius && dist > 0.001)
+                    {
+                        double ratio = _wheelRadius / dist;
+                        nx = _wheelOriginX + offX * ratio;
+                        ny = _wheelOriginY + offY * ratio * 1.778;
+                    }
+                    _wheelCurX = Math.Max(100, Math.Min(9900, nx));
+                    _wheelCurY = Math.Max(100, Math.Min(9900, ny));
+                    _client.InjectTouch(2, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                }
+
+                // 2. Flush accumulated mouse camera delta at smooth ~125Hz (paused while wheel-dragging)
+                if (_cameraLocked && _wheelTouchId == 0 && (_camAccumDx != 0 || _camAccumDy != 0))
                 {
                     int adx = _camAccumDx;
                     int ady = _camAccumDy;
@@ -255,7 +290,7 @@ namespace ScrcpyLauncher
                 bool anyHeld;
                 lock (_stateLock)
                 {
-                    anyHeld = _joyTouchId != 0 || _camTouchId != 0 || _heldKeys.Count > 0 || _leftTouchId != 0 || _rightTouchId != 0 || _manualTouchId != 0;
+                    anyHeld = _joyTouchId != 0 || _camTouchId != 0 || _wheelTouchId != 0 || _heldKeys.Count > 0 || _leftTouchId != 0 || _rightTouchId != 0 || _manualTouchId != 0;
                 }
                 if (anyHeld) ReleaseAllInputs();
             }
@@ -288,6 +323,15 @@ namespace ScrcpyLauncher
                     _camAccumDx = 0;
                     _camAccumDy = 0;
                     StopCameraFingerLocked();
+
+                if (_wheelTouchId != 0)
+                {
+                    _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                    _wheelTouchId = 0;
+                    _wheelVk = 0;
+                    _wheelAccumDx = 0;
+                    _wheelAccumDy = 0;
+                }
                 }
             }
             else
@@ -298,6 +342,15 @@ namespace ScrcpyLauncher
                     _camAccumDx = 0;
                     _camAccumDy = 0;
                     StopCameraFingerLocked();
+
+                if (_wheelTouchId != 0)
+                {
+                    _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                    _wheelTouchId = 0;
+                    _wheelVk = 0;
+                    _wheelAccumDx = 0;
+                    _wheelAccumDy = 0;
+                }
                     if (_leftTouchId != 0 && _profile != null)
                     {
                         _client.InjectTouch(1, _leftTouchId, _profile.LeftClickX, _profile.LeftClickY);
@@ -339,6 +392,15 @@ namespace ScrcpyLauncher
                 _joyUp = _joyDown = _joyLeft = _joyRight = _joySprint = false;
 
                 StopCameraFingerLocked();
+
+                if (_wheelTouchId != 0)
+                {
+                    _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                    _wheelTouchId = 0;
+                    _wheelVk = 0;
+                    _wheelAccumDx = 0;
+                    _wheelAccumDy = 0;
+                }
 
                 if (_manualTouchId != 0)
                 {
@@ -433,7 +495,37 @@ namespace ScrcpyLauncher
                             {
                                 lock (_stateLock)
                                 {
-                                    if (isDown)
+                                    if (item.IsWheelDrag)
+                                    {
+                                        if (isDown)
+                                        {
+                                            if (_wheelTouchId == 0)
+                                            {
+                                                StopCameraFingerLocked();
+                                                _camAccumDx = 0;
+                                                _camAccumDy = 0;
+                                                _wheelVk = item.VkCode;
+                                                _wheelOriginX = item.X;
+                                                _wheelOriginY = item.Y;
+                                                _wheelCurX = item.X;
+                                                _wheelCurY = item.Y;
+                                                _wheelRadius = item.WheelRadius > 200 ? item.WheelRadius : 1500;
+                                                _wheelAccumDx = 0;
+                                                _wheelAccumDy = 0;
+                                                _wheelTouchId = _nextTouchId++;
+                                                _client.InjectTouch(0, _wheelTouchId, item.X, item.Y);
+                                            }
+                                        }
+                                        else if (isUp && _wheelTouchId != 0 && _wheelVk == item.VkCode)
+                                        {
+                                            _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                                            _wheelTouchId = 0;
+                                            _wheelVk = 0;
+                                            _wheelAccumDx = 0;
+                                            _wheelAccumDy = 0;
+                                        }
+                                    }
+                                    else if (isDown)
                                     {
                                         if (!_heldKeys.ContainsKey(item.VkCode))
                                         {
@@ -538,7 +630,9 @@ namespace ScrcpyLauncher
 
         public void OnRawMouseDelta(int dx, int dy)
         {
-            if (!_active || !_cameraLocked || _profile == null || !_client.IsConnected || _targetHwnd == IntPtr.Zero)
+            if (!_active || _profile == null || !_client.IsConnected || _targetHwnd == IntPtr.Zero)
+                return;
+            if (!_cameraLocked && _wheelTouchId == 0)
                 return;
             if (GetForegroundWindow() != _targetHwnd)
                 return;
@@ -546,8 +640,16 @@ namespace ScrcpyLauncher
 
             lock (_stateLock)
             {
-                _camAccumDx += dx;
-                _camAccumDy += dy;
+                if (_wheelTouchId != 0)
+                {
+                    _wheelAccumDx += dx;
+                    _wheelAccumDy += dy;
+                }
+                else if (_cameraLocked)
+                {
+                    _camAccumDx += dx;
+                    _camAccumDy += dy;
+                }
             }
         }
 
@@ -606,6 +708,32 @@ namespace ScrcpyLauncher
                                 return (IntPtr)1;
                             }
                         }
+                    }
+
+                    // Right-click mapped action works in BOTH camera-locked mode AND normal mode!
+                    if (msg == WM_RBUTTONDOWN && _profile.EnableRightClick)
+                    {
+                        lock (_stateLock)
+                        {
+                            if (_rightTouchId == 0)
+                            {
+                                _rightTouchId = _nextTouchId++;
+                                _client.InjectTouch(0, _rightTouchId, _profile.RightClickX, _profile.RightClickY);
+                            }
+                        }
+                        return (IntPtr)1;
+                    }
+                    else if (msg == WM_RBUTTONUP && _profile.EnableRightClick)
+                    {
+                        lock (_stateLock)
+                        {
+                            if (_rightTouchId != 0)
+                            {
+                                _client.InjectTouch(1, _rightTouchId, _profile.RightClickX, _profile.RightClickY);
+                                _rightTouchId = 0;
+                            }
+                        }
+                        return (IntPtr)1;
                     }
 
                     if (_cameraLocked)

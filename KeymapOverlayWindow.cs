@@ -260,19 +260,34 @@ namespace ScrcpyLauncher
                 PlaceAndMakeDraggable(rc, _profile.RightClickX, _profile.RightClickY, (nx, ny) => { _profile.RightClickX = nx; _profile.RightClickY = ny; });
             }
 
-            // 4. Action keys
+            // 4. Action keys (normal + wheel drag)
             foreach (var item in _profile.Keys)
             {
                 var k = item;
-                var badge = CreateBadge(
-                    k.KeyName,
-                    _isEditMode ? (k.Label ?? "") : "",
-                    _isEditMode ? 48 : 32,
-                    _isEditMode ? 36 : 24,
-                    Color.FromArgb((byte)(_isEditMode ? 190 : 58), 15, 23, 42),
-                    Color.FromArgb((byte)(_isEditMode ? 210 : 90), 148, 163, 184),
-                    false);
-                PlaceAndMakeDraggable(badge, k.X, k.Y, (nx, ny) => { k.X = nx; k.Y = ny; });
+                if (k.IsWheelDrag)
+                {
+                    var wheelBadge = CreateBadge(
+                        k.KeyName,
+                        _isEditMode ? (string.IsNullOrWhiteSpace(k.Label) ? "휠" : k.Label) : "휠",
+                        _isEditMode ? 52 : 36,
+                        _isEditMode ? 52 : 36,
+                        Color.FromArgb((byte)(_isEditMode ? 190 : 54), 13, 148, 136),
+                        Color.FromArgb((byte)(_isEditMode ? 225 : 105), 94, 234, 212),
+                        true);
+                    PlaceAndMakeDraggable(wheelBadge, k.X, k.Y, (nx, ny) => { k.X = nx; k.Y = ny; });
+                }
+                else
+                {
+                    var badge = CreateBadge(
+                        k.KeyName,
+                        _isEditMode ? (k.Label ?? "") : "",
+                        _isEditMode ? 48 : 32,
+                        _isEditMode ? 36 : 24,
+                        Color.FromArgb((byte)(_isEditMode ? 190 : 58), 15, 23, 42),
+                        Color.FromArgb((byte)(_isEditMode ? 210 : 90), 148, 163, 184),
+                        false);
+                    PlaceAndMakeDraggable(badge, k.X, k.Y, (nx, ny) => { k.X = nx; k.Y = ny; });
+                }
             }
         }
 

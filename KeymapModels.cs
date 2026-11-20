@@ -13,6 +13,13 @@ namespace ScrcpyLauncher
         public string Label { get; set; }
         public int X { get; set; } // 0..10000
         public int Y { get; set; } // 0..10000
+        public bool IsWheelDrag { get; set; }
+        public int WheelRadius { get; set; }
+
+        public KeyBindItem()
+        {
+            WheelRadius = 1500;
+        }
 
         public string KeyName
         {
@@ -21,8 +28,9 @@ namespace ScrcpyLauncher
 
         public override string ToString()
         {
+            string tag = IsWheelDrag ? " [휠드래그]" : "";
             string desc = string.IsNullOrWhiteSpace(Label) ? "" : " — " + Label;
-            return string.Format("[{0}]{1}  ({2:F1}%, {3:F1}%)", KeyName, desc, X / 100.0, Y / 100.0);
+            return string.Format("[{0}]{1}{2}  ({3:F1}%, {4:F1}%)", KeyName, tag, desc, X / 100.0, Y / 100.0);
         }
     }
 
@@ -30,6 +38,7 @@ namespace ScrcpyLauncher
     {
         public string Name { get; set; }
         public bool IsBuiltIn { get; set; }
+        public string FilePath { get; set; }
 
         // WASD Joystick
         public bool EnableJoystick { get; set; }
@@ -145,7 +154,7 @@ namespace ScrcpyLauncher
                     new KeyBindItem { VkCode = 82, Label = "동료 오의", X = 6710, Y = 6480 },
                     new KeyBindItem { VkCode = 70, Label = "상호작용", X = 5930, Y = 5280 },
                     new KeyBindItem { VkCode = 67, Label = "아이템 빠른 사용", X = 6790, Y = 7580 },
-                    new KeyBindItem { VkCode = 71, Label = "아이템", X = 6780, Y = 8760 },
+                    new KeyBindItem { VkCode = 71, Label = "아이템/탄환 휠", X = 6780, Y = 8760, IsWheelDrag = true, WheelRadius = 1500 },
                     new KeyBindItem { VkCode = 88, Label = "아이템 취소", X = 9010, Y = 6920 },
                     new KeyBindItem { VkCode = 49, Label = "오의 1번", X = 9290, Y = 2000 },
                     new KeyBindItem { VkCode = 50, Label = "슬롯 2", X = 9290, Y = 3180 },
@@ -156,7 +165,7 @@ namespace ScrcpyLauncher
                     new KeyBindItem { VkCode = 86, Label = "버튼 V", X = 1340, Y = 3850 },
                     new KeyBindItem { VkCode = 84, Label = "버튼 T", X = 6740, Y = 3900 },
                     new KeyBindItem { VkCode = 74, Label = "구출", X = 4900, Y = 8850 },
-                    new KeyBindItem { VkCode = 9, Label = "Tab", X = 7760, Y = 3950 },
+                    new KeyBindItem { VkCode = 9, Label = "부위 조준 휠", X = 7760, Y = 3950, IsWheelDrag = true, WheelRadius = 1500 },
                     new KeyBindItem { VkCode = 77, Label = "지도", X = 960, Y = 1800 },
                     new KeyBindItem { VkCode = 192, Label = "건너뛰기", X = 9020, Y = 850 },
                     new KeyBindItem { VkCode = 27, Label = "메뉴", X = 9660, Y = 850 }
@@ -212,6 +221,9 @@ namespace ScrcpyLauncher
                     if (p != null)
                     {
                         p.IsBuiltIn = false;
+                        p.FilePath = file;
+                        if (string.IsNullOrWhiteSpace(p.Name))
+                            p.Name = Path.GetFileNameWithoutExtension(file);
                         if (p.Keys == null) p.Keys = new List<KeyBindItem>();
                         result.Add(p);
                     }
@@ -227,10 +239,29 @@ namespace ScrcpyLauncher
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
             string safeName = string.Join("_", (Name ?? "profile").Split(Path.GetInvalidFileNameChars())).Trim();
             if (string.IsNullOrEmpty(safeName)) safeName = "profile";
-            string path = Path.Combine(dir, safeName + ".json");
+            string newPath = Path.Combine(dir, safeName + ".json");
+
+            if (!string.IsNullOrEmpty(FilePath) && File.Exists(FilePath) &&
+                !string.Equals(FilePath, newPath, StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.Delete(FilePath); } catch { }
+            }
+
             var serializer = new JavaScriptSerializer();
             IsBuiltIn = false;
-            File.WriteAllText(path, serializer.Serialize(this), new UTF8Encoding(false));
+            FilePath = newPath;
+            File.WriteAllText(newPath, serializer.Serialize(this), new UTF8Encoding(false));
+        }
+
+        public void DeleteCustomFile()
+        {
+            if (IsBuiltIn) return;
+            try
+            {
+                if (!string.IsNullOrEmpty(FilePath) && File.Exists(FilePath))
+                    File.Delete(FilePath);
+            }
+            catch { }
         }
 
         public static KeymapProfile ImportFromLdKmp(string filePath)
@@ -325,6 +356,25 @@ namespace ScrcpyLauncher
                         int px, py;
                         ReadPoint(data, "point", out px, out py);
                         profile.Keys.Add(new KeyBindItem { VkCode = vk, Label = desc, X = px, Y = py });
+                    }
+                }
+                else if (cls == "ClassMouseDisc")
+                {
+                    int vk = ReadInt(data, "key", 0);
+                    if (vk > 0)
+                    {
+                        int ox, oy;
+                        ReadPoint(data, "origin", out ox, out oy);
+                        int rad = ReadInt(data, "radius", 1400);
+                        profile.Keys.Add(new KeyBindItem
+                        {
+                            VkCode = vk,
+                            Label = string.IsNullOrWhiteSpace(desc) ? "휠 선택" : desc,
+                            X = ox,
+                            Y = oy,
+                            IsWheelDrag = true,
+                            WheelRadius = Math.Max(800, Math.Min(3000, rad + 400))
+                        });
                     }
                 }
                 else if (cls == "ClassKeyboardMacros")
