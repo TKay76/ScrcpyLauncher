@@ -1,7 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -13,11 +16,12 @@ namespace ScrcpyLauncher
         public bool HasUpdate { get; set; }
         public string LatestTag { get; set; }
         public string ReleaseUrl { get; set; }
+        public string ExeDownloadUrl { get; set; }
     }
 
     public static class UpdateChecker
     {
-        public const string CurrentVersion = "1.2.0";
+        public const string CurrentVersion = "1.3.0";
         public const string RepoOwner = "TKay76";
         public const string RepoName = "ScrcpyLauncher";
         public const string ReleasesPageUrl = "https://github.com/TKay76/ScrcpyLauncher/releases";
@@ -27,7 +31,7 @@ namespace ScrcpyLauncher
         {
             return Task.Run(() =>
             {
-                var info = new UpdateInfo { HasUpdate = false, LatestTag = "", ReleaseUrl = ReleasesPageUrl };
+                var info = new UpdateInfo { HasUpdate = false, LatestTag = "", ReleaseUrl = ReleasesPageUrl, ExeDownloadUrl = "" };
                 try
                 {
                     ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
@@ -55,6 +59,23 @@ namespace ScrcpyLauncher
                             info.LatestTag = tag;
                             info.ReleaseUrl = url;
                             info.HasUpdate = IsNewerVersion(tag, CurrentVersion);
+
+                            if (dict.ContainsKey("assets") && dict["assets"] is ArrayList)
+                            {
+                                var assets = (ArrayList)dict["assets"];
+                                foreach (var assetObj in assets)
+                                {
+                                    var asset = assetObj as Dictionary<string, object>;
+                                    if (asset == null) continue;
+                                    string name = asset.ContainsKey("name") && asset["name"] != null ? asset["name"].ToString() : "";
+                                    if (string.Equals(name, "ScrcpyLauncher.exe", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        if (asset.ContainsKey("browser_download_url") && asset["browser_download_url"] != null)
+                                            info.ExeDownloadUrl = asset["browser_download_url"].ToString().Trim();
+                                        break;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -63,6 +84,86 @@ namespace ScrcpyLauncher
                     // Silently ignore network errors or 404 (before first release is published)
                 }
                 return info;
+            });
+        }
+
+        public static Task<Tuple<bool, string>> DownloadAndApplyUpdateAsync(string downloadUrl)
+        {
+            return Task.Run(() =>
+            {
+                string curExe = Assembly.GetExecutingAssembly().Location;
+                string newExe = curExe + ".new";
+                try
+                {
+                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                    var req = (HttpWebRequest)WebRequest.Create(downloadUrl);
+                    req.Method = "GET";
+                    req.UserAgent = "ScrcpyLauncher/" + CurrentVersion;
+                    req.AllowAutoRedirect = true;
+                    req.Timeout = 15000;
+                    req.ReadWriteTimeout = 30000;
+
+                    using (var resp = (HttpWebResponse)req.GetResponse())
+                    using (var netStream = resp.GetResponseStream())
+                    using (var fs = new FileStream(newExe, FileMode.Create, FileAccess.Write, FileShare.None))
+                    {
+                        netStream.CopyTo(fs);
+                    }
+
+                    // Validate downloaded PE executable (size >= 50KB and starts with 'MZ')
+                    var fi = new FileInfo(newExe);
+                    if (!fi.Exists || fi.Length < 50000)
+                    {
+                        try { File.Delete(newExe); } catch { }
+                        return Tuple.Create(false, "다운로드된 파일 크기가 올바르지 않습니다.");
+                    }
+
+                    byte[] hdr = new byte[2];
+                    using (var fs = new FileStream(newExe, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    {
+                        fs.Read(hdr, 0, 2);
+                    }
+                    if (hdr[0] != 0x4D || hdr[1] != 0x5A) // 'M', 'Z'
+                    {
+                        try { File.Delete(newExe); } catch { }
+                        return Tuple.Create(false, "다운로드된 파일이 유효한 실행 파일이 아닙니다.");
+                    }
+
+                    string batPath = Path.Combine(Path.GetTempPath(), "scrcpy_launcher_update_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".bat");
+                    string batContent =
+                        "@echo off\r\n" +
+                        "chcp 65001 >nul\r\n" +
+                        "timeout /t 1 /nobreak >nul\r\n" +
+                        "set /a tries=0\r\n" +
+                        ":retry\r\n" +
+                        "move /Y \"" + newExe + "\" \"" + curExe + "\" >nul 2>&1\r\n" +
+                        "if errorlevel 1 (\r\n" +
+                        "  set /a tries+=1\r\n" +
+                        "  if %tries% LSS 15 (\r\n" +
+                        "    timeout /t 1 /nobreak >nul\r\n" +
+                        "    goto retry\r\n" +
+                        "  )\r\n" +
+                        "  exit /b 1\r\n" +
+                        ")\r\n" +
+                        "start \"\" \"" + curExe + "\"\r\n" +
+                        "del \"%~f0\"\r\n";
+
+                    File.WriteAllText(batPath, batContent, new UTF8Encoding(false));
+
+                    var psi = new ProcessStartInfo("cmd.exe", "/c \"" + batPath + "\"")
+                    {
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                    Process.Start(psi);
+                    return Tuple.Create(true, "업데이트 준비 완료");
+                }
+                catch (Exception ex)
+                {
+                    try { if (File.Exists(newExe)) File.Delete(newExe); } catch { }
+                    return Tuple.Create(false, ex.Message);
+                }
             });
         }
 

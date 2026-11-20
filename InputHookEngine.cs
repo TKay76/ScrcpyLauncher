@@ -51,10 +51,12 @@ namespace ScrcpyLauncher
         private int _joyKeepAliveToggle = 0;
         private const double JoySmoothMs = 50.0;
 
-        // Action keys currently held down (vk -> pointerId)
-        private readonly Dictionary<int, long> _heldKeys = new Dictionary<int, long>();
+        // Action keys currently held down (bind -> pointerId)
+        private readonly Dictionary<KeyBindItem, long> _heldKeys = new Dictionary<KeyBindItem, long>();
         private long _leftTouchId = 0;
         private long _rightTouchId = 0;
+        private bool _camToggleHeld = false;
+        private bool _camToggleUsedAsModifier = false;
 
         // Wheel-drag selection key state (e.g. Tab part targeting, G item/ammo wheel)
         private long _wheelTouchId = 0;
@@ -70,6 +72,7 @@ namespace ScrcpyLauncher
         public event Action<bool> CameraLockChanged;
         public event Action<string> StatusMessage;
         public event Action HintToggleRequested;
+        public event Action<int> ProfileSwitchRequested;
 
         private const int WH_KEYBOARD_LL = 13;
         private const int WH_MOUSE_LL = 14;
@@ -147,6 +150,41 @@ namespace ScrcpyLauncher
 
         [DllImport("user32.dll")]
         private static extern bool ClipCursor(IntPtr lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int vKey);
+
+        private static int GetCurrentModifiers()
+        {
+            int m = 0;
+            if ((GetAsyncKeyState(17) & 0x8000) != 0) m |= 1; // Ctrl
+            if ((GetAsyncKeyState(16) & 0x8000) != 0) m |= 2; // Shift
+            if ((GetAsyncKeyState(18) & 0x8000) != 0) m |= 4; // Alt
+            return m;
+        }
+
+        private KeyBindItem FindMatchingBind(int vk, int curMods)
+        {
+            if (_profile == null || _profile.Keys == null) return null;
+            // 1. Exact combo match takes priority (e.g. Alt+1, Ctrl+Q, Shift+E)
+            if (curMods != 0)
+            {
+                for (int i = 0; i < _profile.Keys.Count; i++)
+                {
+                    var item = _profile.Keys[i];
+                    if (item.Modifiers != 0 && item.Modifiers == curMods && NormalizeVk(item.VkCode) == vk)
+                        return item;
+                }
+            }
+            // 2. Fallback to plain key match (Modifiers == 0)
+            for (int i = 0; i < _profile.Keys.Count; i++)
+            {
+                var item = _profile.Keys[i];
+                if (item.Modifiers == 0 && NormalizeVk(item.VkCode) == vk)
+                    return item;
+            }
+            return null;
+        }
 
         public bool IsActive { get { return _active; } }
         public bool IsCameraLocked { get { return _cameraLocked; } }
@@ -408,15 +446,13 @@ namespace ScrcpyLauncher
                     _manualTouchId = 0;
                 }
 
-                if (_profile != null)
+                foreach (var kv in _heldKeys)
                 {
-                    foreach (var kv in _heldKeys)
-                    {
-                        var item = _profile.Keys.Find(k => k.VkCode == kv.Key);
-                        if (item != null) _client.InjectTouch(1, kv.Value, item.X, item.Y);
-                    }
+                    _client.InjectTouch(1, kv.Value, kv.Key.X, kv.Key.Y);
                 }
                 _heldKeys.Clear();
+                _camToggleHeld = false;
+                _camToggleUsedAsModifier = false;
 
                 if (_leftTouchId != 0 && _profile != null)
                 {
@@ -457,16 +493,41 @@ namespace ScrcpyLauncher
                         if (vk == 91 || vk == 92)
                             return CallNextHookEx(_kbHook, nCode, wParam, lParam);
 
-                        // F1 toggles on-screen key hints mid-game
-                        if (vk == 112)
+                        int curMods = GetCurrentModifiers();
+
+                        // Ctrl + F1..F9 switches keymap profiles instantly (0..8)
+                        if (vk >= 112 && vk <= 120 && (curMods & 1) != 0)
+                        {
+                            if (isUp && ProfileSwitchRequested != null)
+                                ProfileSwitchRequested(vk - 112);
+                            return (IntPtr)1;
+                        }
+
+                        // F1 (without Ctrl) toggles on-screen key hints mid-game
+                        if (vk == 112 && curMods == 0)
                         {
                             if (isUp && HintToggleRequested != null) HintToggleRequested();
                             return (IntPtr)1;
                         }
 
+                        // Camera toggle key (e.g. Alt): if used as modifier in an Alt+Key combo, skip toggling on release!
                         if (_profile.EnableMouseCamera && vk == NormalizeVk(_profile.CameraToggleVk))
                         {
-                            if (isUp) SetCameraLock(!_cameraLocked);
+                            if (isDown)
+                            {
+                                if (!_camToggleHeld)
+                                {
+                                    _camToggleHeld = true;
+                                    _camToggleUsedAsModifier = false;
+                                }
+                            }
+                            else if (isUp)
+                            {
+                                bool usedAsMod = _camToggleUsedAsModifier;
+                                _camToggleHeld = false;
+                                _camToggleUsedAsModifier = false;
+                                if (!usedAsMod) SetCameraLock(!_cameraLocked);
+                            }
                             return (IntPtr)1;
                         }
 
@@ -488,64 +549,88 @@ namespace ScrcpyLauncher
                             if (joyHit) return (IntPtr)1;
                         }
 
-                        for (int i = 0; i < _profile.Keys.Count; i++)
+                        // On key UP, release any held action/wheel bind whose main VkCode matches (even if modifier was released first)
+                        if (isUp)
                         {
-                            var item = _profile.Keys[i];
-                            if (NormalizeVk(item.VkCode) == vk)
+                            bool releasedAny = false;
+                            lock (_stateLock)
                             {
+                                if (_wheelTouchId != 0 && NormalizeVk(_wheelVk) == vk)
+                                {
+                                    _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                                    _wheelTouchId = 0;
+                                    _wheelVk = 0;
+                                    _wheelAccumDx = 0;
+                                    _wheelAccumDy = 0;
+                                    releasedAny = true;
+                                }
+
+                                List<KeyBindItem> toRelease = null;
+                                foreach (var kv in _heldKeys)
+                                {
+                                    if (NormalizeVk(kv.Key.VkCode) == vk)
+                                    {
+                                        if (toRelease == null) toRelease = new List<KeyBindItem>();
+                                        toRelease.Add(kv.Key);
+                                    }
+                                }
+                                if (toRelease != null)
+                                {
+                                    for (int r = 0; r < toRelease.Count; r++)
+                                    {
+                                        var relItem = toRelease[r];
+                                        long relId = _heldKeys[relItem];
+                                        _heldKeys.Remove(relItem);
+                                        _client.InjectTouch(1, relId, relItem.X, relItem.Y);
+                                        releasedAny = true;
+                                    }
+                                }
+                            }
+                            if (releasedAny) return (IntPtr)1;
+                        }
+
+                        // On key DOWN, match combo first (Ctrl/Shift/Alt+Key), then plain key
+                        var matched = FindMatchingBind(vk, curMods);
+                        if (matched != null)
+                        {
+                            if (isDown)
+                            {
+                                if ((matched.Modifiers & 4) != 0 && NormalizeVk(_profile.CameraToggleVk) == 18)
+                                    _camToggleUsedAsModifier = true;
+
                                 lock (_stateLock)
                                 {
-                                    if (item.IsWheelDrag)
+                                    if (matched.IsWheelDrag)
                                     {
-                                        if (isDown)
+                                        if (_wheelTouchId == 0)
                                         {
-                                            if (_wheelTouchId == 0)
-                                            {
-                                                StopCameraFingerLocked();
-                                                _camAccumDx = 0;
-                                                _camAccumDy = 0;
-                                                _wheelVk = item.VkCode;
-                                                _wheelOriginX = item.X;
-                                                _wheelOriginY = item.Y;
-                                                _wheelCurX = item.X;
-                                                _wheelCurY = item.Y;
-                                                _wheelRadius = item.WheelRadius > 200 ? item.WheelRadius : 1500;
-                                                _wheelAccumDx = 0;
-                                                _wheelAccumDy = 0;
-                                                _wheelTouchId = _nextTouchId++;
-                                                _client.InjectTouch(0, _wheelTouchId, item.X, item.Y);
-                                            }
-                                        }
-                                        else if (isUp && _wheelTouchId != 0 && _wheelVk == item.VkCode)
-                                        {
-                                            _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
-                                            _wheelTouchId = 0;
-                                            _wheelVk = 0;
+                                            StopCameraFingerLocked();
+                                            _camAccumDx = 0;
+                                            _camAccumDy = 0;
+                                            _wheelVk = matched.VkCode;
+                                            _wheelOriginX = matched.X;
+                                            _wheelOriginY = matched.Y;
+                                            _wheelCurX = matched.X;
+                                            _wheelCurY = matched.Y;
+                                            _wheelRadius = matched.WheelRadius > 200 ? matched.WheelRadius : 1500;
                                             _wheelAccumDx = 0;
                                             _wheelAccumDy = 0;
+                                            _wheelTouchId = _nextTouchId++;
+                                            _client.InjectTouch(0, _wheelTouchId, matched.X, matched.Y);
                                         }
                                     }
-                                    else if (isDown)
+                                    else
                                     {
-                                        if (!_heldKeys.ContainsKey(item.VkCode))
+                                        if (!_heldKeys.ContainsKey(matched))
                                         {
                                             long id = _nextTouchId++;
-                                            _heldKeys[item.VkCode] = id;
-                                            _client.InjectTouch(0, id, item.X, item.Y);
-                                        }
-                                    }
-                                    else if (isUp)
-                                    {
-                                        long id;
-                                        if (_heldKeys.TryGetValue(item.VkCode, out id))
-                                        {
-                                            _heldKeys.Remove(item.VkCode);
-                                            _client.InjectTouch(1, id, item.X, item.Y);
+                                            _heldKeys[matched] = id;
+                                            _client.InjectTouch(0, id, matched.X, matched.Y);
                                         }
                                     }
                                 }
-                                return (IntPtr)1;
                             }
+                            return (IntPtr)1;
                         }
                     }
                 }
@@ -679,34 +764,83 @@ namespace ScrcpyLauncher
 
                     if (extraVk > 0)
                     {
-                        for (int i = 0; i < _profile.Keys.Count; i++)
+                        if (extraUp)
                         {
-                            var item = _profile.Keys[i];
-                            if (item.VkCode == extraVk)
+                            bool releasedAny = false;
+                            lock (_stateLock)
                             {
-                                lock (_stateLock)
+                                if (_wheelTouchId != 0 && _wheelVk == extraVk)
                                 {
-                                    if (extraDown)
+                                    _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                                    _wheelTouchId = 0;
+                                    _wheelVk = 0;
+                                    _wheelAccumDx = 0;
+                                    _wheelAccumDy = 0;
+                                    releasedAny = true;
+                                }
+                                List<KeyBindItem> toRelease = null;
+                                foreach (var kv in _heldKeys)
+                                {
+                                    if (kv.Key.VkCode == extraVk)
                                     {
-                                        if (!_heldKeys.ContainsKey(item.VkCode))
-                                        {
-                                            long id = _nextTouchId++;
-                                            _heldKeys[item.VkCode] = id;
-                                            _client.InjectTouch(0, id, item.X, item.Y);
-                                        }
-                                    }
-                                    else if (extraUp)
-                                    {
-                                        long id;
-                                        if (_heldKeys.TryGetValue(item.VkCode, out id))
-                                        {
-                                            _heldKeys.Remove(item.VkCode);
-                                            _client.InjectTouch(1, id, item.X, item.Y);
-                                        }
+                                        if (toRelease == null) toRelease = new List<KeyBindItem>();
+                                        toRelease.Add(kv.Key);
                                     }
                                 }
-                                return (IntPtr)1;
+                                if (toRelease != null)
+                                {
+                                    for (int r = 0; r < toRelease.Count; r++)
+                                    {
+                                        var relItem = toRelease[r];
+                                        long relId = _heldKeys[relItem];
+                                        _heldKeys.Remove(relItem);
+                                        _client.InjectTouch(1, relId, relItem.X, relItem.Y);
+                                        releasedAny = true;
+                                    }
+                                }
                             }
+                            if (releasedAny) return (IntPtr)1;
+                        }
+
+                        int curMods = GetCurrentModifiers();
+                        var matched = FindMatchingBind(extraVk, curMods);
+                        if (matched != null)
+                        {
+                            if (extraDown)
+                            {
+                                if ((matched.Modifiers & 4) != 0 && NormalizeVk(_profile.CameraToggleVk) == 18)
+                                    _camToggleUsedAsModifier = true;
+
+                                lock (_stateLock)
+                                {
+                                    if (matched.IsWheelDrag)
+                                    {
+                                        if (_wheelTouchId == 0)
+                                        {
+                                            StopCameraFingerLocked();
+                                            _camAccumDx = 0;
+                                            _camAccumDy = 0;
+                                            _wheelVk = matched.VkCode;
+                                            _wheelOriginX = matched.X;
+                                            _wheelOriginY = matched.Y;
+                                            _wheelCurX = matched.X;
+                                            _wheelCurY = matched.Y;
+                                            _wheelRadius = matched.WheelRadius > 200 ? matched.WheelRadius : 1500;
+                                            _wheelAccumDx = 0;
+                                            _wheelAccumDy = 0;
+                                            _wheelTouchId = _nextTouchId++;
+                                            _client.InjectTouch(0, _wheelTouchId, matched.X, matched.Y);
+                                        }
+                                    }
+                                    else if (!_heldKeys.ContainsKey(matched))
+                                    {
+                                        long id = _nextTouchId++;
+                                        _heldKeys[matched] = id;
+                                        _client.InjectTouch(0, id, matched.X, matched.Y);
+                                    }
+                                }
+                            }
+                            return (IntPtr)1;
                         }
                     }
 

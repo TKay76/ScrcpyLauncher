@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Web.Script.Serialization;
@@ -10,6 +11,7 @@ namespace ScrcpyLauncher
     public class KeyBindItem
     {
         public int VkCode { get; set; }
+        public int Modifiers { get; set; } // 0=None, 1=Ctrl, 2=Shift, 4=Alt
         public string Label { get; set; }
         public int X { get; set; } // 0..10000
         public int Y { get; set; } // 0..10000
@@ -23,7 +25,7 @@ namespace ScrcpyLauncher
 
         public string KeyName
         {
-            get { return KeyNameHelper.GetName(VkCode); }
+            get { return KeyNameHelper.GetComboName(Modifiers, VkCode); }
         }
 
         public override string ToString()
@@ -39,6 +41,20 @@ namespace ScrcpyLauncher
         public string Name { get; set; }
         public bool IsBuiltIn { get; set; }
         public string FilePath { get; set; }
+
+        [ScriptIgnore]
+        public int SlotIndex { get; set; }
+
+        [ScriptIgnore]
+        public string DisplayName
+        {
+            get
+            {
+                if (SlotIndex >= 1 && SlotIndex <= 9)
+                    return string.Format("[Ctrl+F{0}]  {1}", SlotIndex, Name);
+                return Name;
+            }
+        }
 
         // WASD Joystick
         public bool EnableJoystick { get; set; }
@@ -264,6 +280,55 @@ namespace ScrcpyLauncher
             catch { }
         }
 
+        public string ExportToShareCode()
+        {
+            var copy = Clone(Name ?? "공유 프로파일");
+            copy.FilePath = null;
+            copy.IsBuiltIn = false;
+            var serializer = new JavaScriptSerializer();
+            byte[] raw = Encoding.UTF8.GetBytes(serializer.Serialize(copy));
+            using (var ms = new MemoryStream())
+            {
+                using (var gz = new GZipStream(ms, CompressionMode.Compress, true))
+                {
+                    gz.Write(raw, 0, raw.Length);
+                }
+                return "SLKM1:" + Convert.ToBase64String(ms.ToArray());
+            }
+        }
+
+        public static KeymapProfile ImportFromShareCode(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+                throw new Exception("프리셋 코드가 비어 있습니다.");
+
+            string trimmed = code.Trim();
+            if (!trimmed.StartsWith("SLKM1:", StringComparison.OrdinalIgnoreCase))
+                throw new Exception("올바른 Scrcpy Launcher 프리셋 코드(SLKM1:...)가 아닙니다.");
+
+            byte[] compressed = Convert.FromBase64String(trimmed.Substring(6).Trim());
+            string json;
+            using (var msIn = new MemoryStream(compressed))
+            using (var gz = new GZipStream(msIn, CompressionMode.Decompress))
+            using (var reader = new StreamReader(gz, Encoding.UTF8))
+            {
+                json = reader.ReadToEnd();
+            }
+
+            var serializer = new JavaScriptSerializer();
+            var profile = serializer.Deserialize<KeymapProfile>(json);
+            if (profile == null)
+                throw new Exception("프리셋 코드를 해석할 수 없습니다.");
+
+            profile.IsBuiltIn = false;
+            profile.FilePath = null;
+            if (string.IsNullOrWhiteSpace(profile.Name))
+                profile.Name = "공유받은 프로파일";
+            if (profile.Keys == null)
+                profile.Keys = new List<KeyBindItem>();
+            return profile;
+        }
+
         public static KeymapProfile ImportFromLdKmp(string filePath)
         {
             string json = File.ReadAllText(filePath, Encoding.UTF8);
@@ -426,6 +491,18 @@ namespace ScrcpyLauncher
 
     public static class KeyNameHelper
     {
+        public static string GetComboName(int modifiers, int vk)
+        {
+            string key = GetName(vk);
+            if (modifiers == 0) return key;
+            var parts = new List<string>();
+            if ((modifiers & 1) != 0) parts.Add("Ctrl");
+            if ((modifiers & 2) != 0) parts.Add("Shift");
+            if ((modifiers & 4) != 0) parts.Add("Alt");
+            parts.Add(key);
+            return string.Join("+", parts.ToArray());
+        }
+
         public static string GetName(int vk)
         {
             switch (vk)

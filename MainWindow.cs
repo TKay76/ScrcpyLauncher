@@ -34,6 +34,7 @@ namespace ScrcpyLauncher
         private int _activeDisplayWidth = 1920;
         private int _activeDisplayHeight = 1080;
         private int _pendingNewKeyVk = 0;
+        private int _pendingNewKeyMods = 0;
         private bool _autoKeymapTriggered = false;
         private Process _scrcpyProcess;
         private Process _recordProcess;
@@ -113,6 +114,7 @@ namespace ScrcpyLauncher
         private TextBlock _txtScrcpyStatus;
         private Border _bdScrcpyStatus;
         private Button _btnUpdate;
+        private UpdateInfo _updateInfo;
         private string _updateReleaseUrl = "";
         private Button _btnDownloadScrcpy;
         private Button _btnSetupGuide;
@@ -183,6 +185,8 @@ namespace ScrcpyLauncher
         private Button _btnRenameProfile;
         private Button _btnDeleteProfile;
         private Button _btnReloadProfiles;
+        private Button _btnExportCode;
+        private Button _btnImportCode;
         private CheckBox _chkKmJoy;
         private CheckBox _chkKmCam;
         private CheckBox _chkKmLeft;
@@ -193,6 +197,10 @@ namespace ScrcpyLauncher
         private TextBlock _txtKmSensXVal;
         private Slider _sldKmSensY;
         private TextBlock _txtKmSensYVal;
+        private Slider _sldHintOpacity;
+        private TextBlock _txtHintOpacityVal;
+        private Slider _sldHintScale;
+        private TextBlock _txtHintScaleVal;
         private Button _btnKmStart;
         private Button _btnKmStop;
         private Button _btnKmEditOverlay;
@@ -209,9 +217,9 @@ namespace ScrcpyLauncher
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.2 — Android 미러링";
+            Title = "Scrcpy Launcher v1.3 — Android 미러링";
             Width = 780;
-            Height = 825;
+            Height = 845;
             MinWidth = 720;
             MinHeight = 720;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -244,7 +252,22 @@ namespace ScrcpyLauncher
             {
                 bool next = !(_chkKmHints.IsChecked == true);
                 _chkKmHints.IsChecked = next;
+                if (_keymapOverlay != null) _keymapOverlay.SetShowHints(next);
                 AppendLog(next ? "[키 매핑] 화면 키 힌트 ON (F1)" : "[키 매핑] 화면 키 힌트 OFF (F1)");
+            }));
+            _hookEngine.ProfileSwitchRequested += (idx) => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (idx >= 0 && idx < _keymapProfiles.Count)
+                {
+                    _cmbKeyProfiles.SelectedIndex = idx;
+                    var p = _keymapProfiles[idx];
+                    AppendLog(string.Format("[키 매핑] 프로파일 전환 (Ctrl+F{0}): {1}", idx + 1, p.Name));
+                    if (_keymapOverlay != null)
+                    {
+                        _keymapOverlay.ShowToast(string.Format("프로파일 전환 (Ctrl+F{0}): {1}", idx + 1, p.Name));
+                        SyncFpsOverlay();
+                    }
+                }
             }));
             LoadKeymapProfiles();
 
@@ -529,7 +552,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.2' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.3' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -774,7 +797,10 @@ namespace ScrcpyLauncher
             <StackPanel Orientation='Horizontal'>
               <Button x:Name='btnSaveAsProfile' Content='다른 이름으로 저장' Style='{StaticResource SubBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
               <Button x:Name='btnRenameProfile' Content='이름 변경' Style='{StaticResource SubBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
-              <Button x:Name='btnDeleteProfile' Content='프로파일 삭제' Style='{StaticResource SoftRedBtn}' Height='26' Padding='10,3' FontSize='11.5'/>
+              <Button x:Name='btnDeleteProfile' Content='프로파일 삭제' Style='{StaticResource SoftRedBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,10,0'/>
+              <Button x:Name='btnExportCode' Content='코드 복사' Style='{StaticResource SoftBlueBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
+              <Button x:Name='btnImportCode' Content='코드 불러오기' Style='{StaticResource SoftBlueBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,8,0'/>
+              <TextBlock Text='게임 중 Ctrl+F1~F9 전환' FontSize='11' Foreground='#64748B' VerticalAlignment='Center'/>
             </StackPanel>
           </StackPanel>
         </Border>
@@ -816,6 +842,22 @@ namespace ScrcpyLauncher
               <TextBlock Grid.Column='5' Text='감도 Y' Style='{StaticResource FieldLabel}'/>
               <Slider x:Name='sldKmSensY' Grid.Column='6' Minimum='0.1' Maximum='3.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
               <TextBlock x:Name='txtKmSensYVal' Grid.Column='7' Text='1.00' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center'/>
+            </Grid>
+            <Grid Margin='0,0,0,10'>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='*'/>
+                <ColumnDefinition Width='40'/>
+                <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='*'/>
+                <ColumnDefinition Width='40'/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column='0' Text='힌트 투명도' Style='{StaticResource FieldLabel}'/>
+              <Slider x:Name='sldHintOpacity' Grid.Column='1' Minimum='0.25' Maximum='1.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
+              <TextBlock x:Name='txtHintOpacityVal' Grid.Column='2' Text='100%' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center' Margin='0,0,12,0'/>
+              <TextBlock Grid.Column='3' Text='힌트 크기' Style='{StaticResource FieldLabel}'/>
+              <Slider x:Name='sldHintScale' Grid.Column='4' Minimum='0.7' Maximum='1.5' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
+              <TextBlock x:Name='txtHintScaleVal' Grid.Column='5' Text='100%' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center'/>
             </Grid>
             <StackPanel Orientation='Horizontal'>
               <Button x:Name='btnKmEditOverlay' Content='화면에서 키 배치' Style='{StaticResource SoftBlueBtn}' Height='32' Padding='16,6' Margin='0,0,8,0'/>
@@ -1001,6 +1043,8 @@ namespace ScrcpyLauncher
             _btnRenameProfile = (Button)root.FindName("btnRenameProfile");
             _btnDeleteProfile = (Button)root.FindName("btnDeleteProfile");
             _btnReloadProfiles = (Button)root.FindName("btnReloadProfiles");
+            _btnExportCode = (Button)root.FindName("btnExportCode");
+            _btnImportCode = (Button)root.FindName("btnImportCode");
             _chkKmJoy = (CheckBox)root.FindName("chkKmJoy");
             _chkKmCam = (CheckBox)root.FindName("chkKmCam");
             _chkKmLeft = (CheckBox)root.FindName("chkKmLeft");
@@ -1011,6 +1055,10 @@ namespace ScrcpyLauncher
             _txtKmSensXVal = (TextBlock)root.FindName("txtKmSensXVal");
             _sldKmSensY = (Slider)root.FindName("sldKmSensY");
             _txtKmSensYVal = (TextBlock)root.FindName("txtKmSensYVal");
+            _sldHintOpacity = (Slider)root.FindName("sldHintOpacity");
+            _txtHintOpacityVal = (TextBlock)root.FindName("txtHintOpacityVal");
+            _sldHintScale = (Slider)root.FindName("sldHintScale");
+            _txtHintScaleVal = (TextBlock)root.FindName("txtHintScaleVal");
             _btnKmStart = (Button)root.FindName("btnKmStart");
             _btnKmStop = (Button)root.FindName("btnKmStop");
             _btnKmEditOverlay = (Button)root.FindName("btnKmEditOverlay");
@@ -1051,7 +1099,7 @@ namespace ScrcpyLauncher
             AttachGuide(_txtAppSearch, "앱 검색", "앱 이름이나 패키지명의 일부를 입력하면 오른쪽 목록이 즉시 필터링됩니다. (예: 게임 이름, 패키지명)");
 
             // Events
-            _btnUpdate.Click += (s, e) => OpenUrl(string.IsNullOrEmpty(_updateReleaseUrl) ? UpdateChecker.ReleasesPageUrl : _updateReleaseUrl);
+            _btnUpdate.Click += BtnUpdate_Click;
             _btnDownloadScrcpy.Click += (s, e) => OpenUrl(ScrcpyReleasesUrl);
             _btnSetupGuide.Click += (s, e) => ShowSetupGuideDialog();
             _btnShortcuts.Click += (s, e) => ShowShortcutsDialog();
@@ -1096,6 +1144,10 @@ namespace ScrcpyLauncher
             _btnRenameProfile.Click += BtnRenameProfile_Click;
             _btnDeleteProfile.Click += BtnDeleteProfile_Click;
             _btnReloadProfiles.Click += (s, e) => { LoadKeymapProfiles(_activeProfile != null ? _activeProfile.Name : null); AppendLog("[키 매핑] 프로파일 목록을 새로고침했습니다."); };
+            _btnExportCode.Click += BtnExportCode_Click;
+            _btnImportCode.Click += BtnImportCode_Click;
+            AttachGuide(_btnExportCode, "프리셋 코드 복사", "현재 프로파일을 한 줄 공유 코드(SLKM1:...)로 클립보드에 복사합니다. 커뮤니티나 친구에게 텍스트로 바로 공유할 수 있습니다.");
+            AttachGuide(_btnImportCode, "프리셋 코드 불러오기", "다른 사람이 공유한 프리셋 코드(SLKM1:...)를 붙여넣어 내 프로파일 목록에 즉시 추가합니다.");
             _btnKmStart.Click += BtnKmStart_Click;
             _btnKmStop.Click += (s, e) => StopKeymap();
             _btnKmEditOverlay.Click += BtnKmEditOverlay_Click;
@@ -1107,8 +1159,28 @@ namespace ScrcpyLauncher
             _txtKmNewKey.PreviewKeyDown += (s, e) =>
             {
                 Key k = (e.Key == Key.System) ? e.SystemKey : e.Key;
-                _pendingNewKeyVk = KeyInterop.VirtualKeyFromKey(k);
-                _txtKmNewKey.Text = KeyNameHelper.GetName(_pendingNewKeyVk);
+                int vk = KeyInterop.VirtualKeyFromKey(k);
+                int mods = 0;
+                if ((Keyboard.Modifiers & ModifierKeys.Control) != 0) mods |= 1;
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) mods |= 2;
+                if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0) mods |= 4;
+
+                // Wait for main key when only a modifier (Ctrl/Shift/Alt) is pressed
+                if (vk == 16 || vk == 160 || vk == 161 || vk == 17 || vk == 162 || vk == 163 || vk == 18 || vk == 164 || vk == 165)
+                {
+                    var mp = new List<string>();
+                    if ((mods & 1) != 0 || vk == 17 || vk == 162 || vk == 163) mp.Add("Ctrl");
+                    if ((mods & 2) != 0 || vk == 16 || vk == 160 || vk == 161) mp.Add("Shift");
+                    if ((mods & 4) != 0 || vk == 18 || vk == 164 || vk == 165) mp.Add("Alt");
+                    _txtKmNewKey.Text = string.Join("+", mp.ToArray()) + "+...";
+                    _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2563EB"));
+                    e.Handled = true;
+                    return;
+                }
+
+                _pendingNewKeyVk = vk;
+                _pendingNewKeyMods = mods;
+                _txtKmNewKey.Text = KeyNameHelper.GetComboName(_pendingNewKeyMods, _pendingNewKeyVk);
                 _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F172A"));
                 e.Handled = true;
             };
@@ -1120,13 +1192,18 @@ namespace ScrcpyLauncher
                 else if (e.ChangedButton == MouseButton.XButton2) mvk = 6;
                 if (mvk > 0)
                 {
+                    int mods = 0;
+                    if ((Keyboard.Modifiers & ModifierKeys.Control) != 0) mods |= 1;
+                    if ((Keyboard.Modifiers & ModifierKeys.Shift) != 0) mods |= 2;
+                    if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0) mods |= 4;
                     _pendingNewKeyVk = mvk;
-                    _txtKmNewKey.Text = KeyNameHelper.GetName(mvk);
+                    _pendingNewKeyMods = mods;
+                    _txtKmNewKey.Text = KeyNameHelper.GetComboName(_pendingNewKeyMods, _pendingNewKeyVk);
                     _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F172A"));
                     e.Handled = true;
                 }
             };
-            AttachGuide(_txtKmNewKey, "매핑 키 입력", "이 칸을 클릭한 뒤 원하는 키보드 키 또는 마우스 4 · 마우스 5 · 휠클릭 버튼을 누르면 등록할 수 있습니다.");
+            AttachGuide(_txtKmNewKey, "매핑 키 입력 (조합키 지원)", "이 칸을 클릭한 뒤 원하는 키(예: Q, Ctrl+1, Shift+E, Alt+2) 또는 마우스 4·5·휠클릭 버튼을 누르면 등록할 수 있습니다.");
 
             Action onKmChanged = () =>
             {
@@ -1142,8 +1219,8 @@ namespace ScrcpyLauncher
             _chkKmLeft.Unchecked += (s, e) => onKmChanged();
             _chkKmRight.Checked += (s, e) => onKmChanged();
             _chkKmRight.Unchecked += (s, e) => onKmChanged();
-            _chkKmHints.Checked += (s, e) => SyncFpsOverlay();
-            _chkKmHints.Unchecked += (s, e) => { if (_keymapOverlay != null && !_keymapOverlay.IsEditMode) _keymapOverlay.Hide(); };
+            _chkKmHints.Checked += (s, e) => { if (_keymapOverlay != null) _keymapOverlay.SetShowHints(true); SyncFpsOverlay(); };
+            _chkKmHints.Unchecked += (s, e) => { if (_keymapOverlay != null) _keymapOverlay.SetShowHints(false); };
             _cmbKmToggleKey.SelectionChanged += (s, e) => onKmChanged();
             _sldKmSensX.ValueChanged += (s, e) =>
             {
@@ -1155,6 +1232,14 @@ namespace ScrcpyLauncher
                 if (_txtKmSensYVal != null) _txtKmSensYVal.Text = _sldKmSensY.Value.ToString("0.00");
                 onKmChanged();
             };
+            Action onHintStyleChanged = () =>
+            {
+                if (_txtHintOpacityVal != null) _txtHintOpacityVal.Text = Math.Round(_sldHintOpacity.Value * 100) + "%";
+                if (_txtHintScaleVal != null) _txtHintScaleVal.Text = Math.Round(_sldHintScale.Value * 100) + "%";
+                if (_keymapOverlay != null) _keymapOverlay.SetHintAppearance(_sldHintOpacity.Value, _sldHintScale.Value);
+            };
+            _sldHintOpacity.ValueChanged += (s, e) => onHintStyleChanged();
+            _sldHintScale.ValueChanged += (s, e) => onHintStyleChanged();
 
             _cmbDevices.SelectionChanged += async (s, e) =>
             {
@@ -1274,6 +1359,7 @@ namespace ScrcpyLauncher
                 "• Alt + Shift + O  :  스마트폰 화면 다시 켜기\n" +
                 "• Alt + I  :  실시간 FPS 표시 켜기 / 끄기\n" +
                 "• F1  :  키 매핑 화면 힌트 켜기 / 끄기\n" +
+                "• Ctrl + F1 ~ F9  :  키 매핑 프로파일 즉시 전환 (무기별 전환)\n" +
                 "• Alt + H  :  홈 버튼 (HOME)\n" +
                 "• Alt + B  (또는 마우스 우클릭)  :  뒤로 가기 (BACK)\n" +
                 "• Alt + S  :  최근 앱 전환 (APP_SWITCH)\n" +
@@ -1355,12 +1441,60 @@ namespace ScrcpyLauncher
             var info = await UpdateChecker.CheckAsync();
             if (info != null && info.HasUpdate)
             {
+                _updateInfo = info;
                 _updateReleaseUrl = info.ReleaseUrl;
                 _btnUpdate.Content = "업데이트 " + info.LatestTag;
-                _btnUpdate.ToolTip = "새 버전(" + info.LatestTag + ")이 출시되었습니다. 클릭하여 GitHub 다운로드 페이지로 이동합니다.";
+                _btnUpdate.ToolTip = "새 버전(" + info.LatestTag + ")이 출시되었습니다. 클릭하여 자동 업데이트하거나 다운로드 페이지로 이동합니다.";
                 _btnUpdate.Visibility = Visibility.Visible;
-                AppendLog(string.Format("[업데이트] 새 버전 {0}이 출시되었습니다! 상단의 [업데이트 {0}] 버튼을 눌러 다운로드할 수 있습니다.", info.LatestTag));
+                AppendLog(string.Format("[업데이트] 새 버전 {0}이 출시되었습니다! 상단의 [업데이트 {0}] 버튼을 눌러 바로 업데이트할 수 있습니다.", info.LatestTag));
             }
+        }
+
+        private async void BtnUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            string url = string.IsNullOrEmpty(_updateReleaseUrl) ? UpdateChecker.ReleasesPageUrl : _updateReleaseUrl;
+            if (_updateInfo == null || string.IsNullOrEmpty(_updateInfo.ExeDownloadUrl))
+            {
+                OpenUrl(url);
+                return;
+            }
+
+            var choice = MessageBox.Show(
+                this,
+                string.Format(
+                    "새 버전 ({0})으로 원클릭 자동 업데이트를 진행할까요?\n\n" +
+                    "• [예] : 지금 바로 다운로드 후 자동 교체 및 재실행\n" +
+                    "• [아니오] : GitHub 릴리즈 웹페이지 열기\n" +
+                    "• [취소] : 닫기",
+                    _updateInfo.LatestTag),
+                "Scrcpy Launcher 자동 업데이트",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question);
+
+            if (choice == MessageBoxResult.No)
+            {
+                OpenUrl(url);
+                return;
+            }
+            if (choice != MessageBoxResult.Yes) return;
+
+            _btnUpdate.IsEnabled = false;
+            _btnUpdate.Content = "업데이트 중...";
+            AppendLog("[업데이트] " + _updateInfo.LatestTag + " 다운로드 중...");
+
+            var res = await UpdateChecker.DownloadAndApplyUpdateAsync(_updateInfo.ExeDownloadUrl);
+            if (!res.Item1)
+            {
+                _btnUpdate.IsEnabled = true;
+                _btnUpdate.Content = "업데이트 " + _updateInfo.LatestTag;
+                AppendLog("[업데이트 실패] " + res.Item2);
+                var openRes = MessageBox.Show(this, "자동 업데이트에 실패했습니다:\n" + res.Item2 + "\n\nGitHub 다운로드 페이지를 여시겠습니까?", "업데이트 실패", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (openRes == MessageBoxResult.Yes) OpenUrl(url);
+                return;
+            }
+
+            AppendLog("[업데이트] 다운로드 완료! 프로그램을 재시작합니다...");
+            Close();
         }
 
         private void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -2295,7 +2429,7 @@ namespace ScrcpyLauncher
                     _hookEngine.CheckFocusSafety();
                 }
 
-                if (_keymapOverlay != null && (_keymapOverlay.IsEditMode || (_hookEngine.IsActive && _chkKmHints.IsChecked == true)))
+                if (_keymapOverlay != null && (_keymapOverlay.IsEditMode || (_hookEngine.IsActive && (_chkKmHints.IsChecked == true || _keymapOverlay.HasActiveToast))))
                 {
                     _keymapOverlay.SyncToTargetWindow(targetHwnd, launcherHwnd);
                 }
@@ -2313,10 +2447,13 @@ namespace ScrcpyLauncher
             _keymapProfiles.AddRange(KeymapProfile.LoadCustomProfiles());
 
             _cmbKeyProfiles.Items.Clear();
-            foreach (var p in _keymapProfiles)
-                _cmbKeyProfiles.Items.Add(p);
+            for (int i = 0; i < _keymapProfiles.Count; i++)
+            {
+                _keymapProfiles[i].SlotIndex = i + 1;
+                _cmbKeyProfiles.Items.Add(_keymapProfiles[i]);
+            }
 
-            _cmbKeyProfiles.DisplayMemberPath = "Name";
+            _cmbKeyProfiles.DisplayMemberPath = "DisplayName";
             if (_cmbKeyProfiles.Items.Count > 0)
             {
                 string want = !string.IsNullOrEmpty(selectName)
@@ -2420,6 +2557,8 @@ namespace ScrcpyLauncher
                 _keymapOverlay = new KeymapOverlayWindow();
                 _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
             }
+            _keymapOverlay.SetShowHints(_chkKmHints.IsChecked == true);
+            _keymapOverlay.SetHintAppearance(_sldHintOpacity.Value, _sldHintScale.Value);
             _keymapOverlay.SetProfile(_activeProfile);
             _keymapOverlay.SetEditMode(false);
             if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
@@ -2459,6 +2598,7 @@ namespace ScrcpyLauncher
                 {
                     var imported = KeymapProfile.ImportFromLdKmp(dlg.FileName);
                     imported.SaveCustom();
+                    imported.SlotIndex = _keymapProfiles.Count + 1;
                     _keymapProfiles.Add(imported);
                     _cmbKeyProfiles.Items.Add(imported);
                     _cmbKeyProfiles.SelectedItem = imported;
@@ -2523,6 +2663,55 @@ namespace ScrcpyLauncher
             AppendLog("[키 매핑] 프로파일 삭제 완료: " + deletedName);
         }
 
+        private void BtnExportCode_Click(object sender, RoutedEventArgs e)
+        {
+            if (_activeProfile == null) return;
+            try
+            {
+                SyncProfileFromUi();
+                string code = _activeProfile.ExportToShareCode();
+                Clipboard.SetText(code);
+                AppendLog(string.Format("[키 매핑] 프리셋 공유 코드 복사 완료: {0} ({1}자)", _activeProfile.Name, code.Length));
+                MessageBox.Show(this,
+                    "현재 프로파일의 공유 코드가 클립보드에 복사되었습니다!\n\n커뮤니티나 메신저에 그대로 붙여넣어 공유할 수 있습니다.",
+                    "프리셋 코드 복사 완료", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "코드 복사 실패: " + ex.Message, "오류", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void BtnImportCode_Click(object sender, RoutedEventArgs e)
+        {
+            string prefill = "";
+            try
+            {
+                if (Clipboard.ContainsText())
+                {
+                    string clip = Clipboard.GetText().Trim();
+                    if (clip.StartsWith("SLKM1:", StringComparison.OrdinalIgnoreCase))
+                        prefill = clip;
+                }
+            }
+            catch { }
+
+            string input = PromptTextDialog("프리셋 코드 불러오기", "공유받은 프리셋 코드(SLKM1:...)를 붙여넣으세요:", prefill);
+            if (string.IsNullOrWhiteSpace(input)) return;
+
+            try
+            {
+                var imported = KeymapProfile.ImportFromShareCode(input);
+                imported.SaveCustom();
+                LoadKeymapProfiles(imported.Name);
+                AppendLog(string.Format("[키 매핑] 프리셋 코드 불러오기 완료: {0} (키 {1}개)", imported.Name, imported.Keys.Count));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "프리셋 코드 불러오기 실패:\n" + ex.Message, "오류", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private string PromptTextDialog(string title, string message, string defaultValue)
         {
             var win = new Window
@@ -2567,6 +2756,8 @@ namespace ScrcpyLauncher
                 _keymapOverlay = new KeymapOverlayWindow();
                 _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
             }
+            _keymapOverlay.SetShowHints(_chkKmHints.IsChecked == true);
+            _keymapOverlay.SetHintAppearance(_sldHintOpacity.Value, _sldHintScale.Value);
             _keymapOverlay.SetProfile(_activeProfile);
             _keymapOverlay.SetEditMode(!_keymapOverlay.IsEditMode);
             if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
@@ -2578,12 +2769,13 @@ namespace ScrcpyLauncher
             if (_activeProfile == null) return;
             if (_pendingNewKeyVk <= 0)
             {
-                MessageBox.Show("왼쪽 입력 칸을 클릭한 뒤 매핑할 키보드 키를 눌러주세요.", "안내", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("왼쪽 입력 칸을 클릭한 뒤 매핑할 키보드 키(또는 조합키/마우스 4·5)를 눌러주세요.", "안내", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
             var item = new KeyBindItem
             {
                 VkCode = _pendingNewKeyVk,
+                Modifiers = _pendingNewKeyMods,
                 Label = (_txtKmNewLabel.Text ?? "").Trim(),
                 X = 5000,
                 Y = 5000,
@@ -2594,6 +2786,7 @@ namespace ScrcpyLauncher
             RefreshKeyListBox();
             if (_keymapOverlay != null) _keymapOverlay.Redraw();
             _pendingNewKeyVk = 0;
+            _pendingNewKeyMods = 0;
             _txtKmNewKey.Text = "클릭 후 키 누름";
             _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#64748B"));
             _txtKmNewLabel.Text = "";
@@ -2674,6 +2867,13 @@ namespace ScrcpyLauncher
             _cmbVdSpec.Text = string.IsNullOrWhiteSpace(_settings.VirtualDisplaySpec) ? "1920x1080/280" : _settings.VirtualDisplaySpec;
             _chkNoVdDecorations.IsChecked = _settings.NoVdSystemDecorations;
 
+            double ho = _settings.OverlayOpacity >= 0.25 && _settings.OverlayOpacity <= 1.0 ? _settings.OverlayOpacity : 1.0;
+            double hs = _settings.OverlayScale >= 0.7 && _settings.OverlayScale <= 1.5 ? _settings.OverlayScale : 1.0;
+            _sldHintOpacity.Value = ho;
+            _txtHintOpacityVal.Text = Math.Round(ho * 100) + "%";
+            _sldHintScale.Value = hs;
+            _txtHintScaleVal.Text = Math.Round(hs * 100) + "%";
+
             _cmbApps.Items.Add(new AppItem { Name = "(선택 안 함 — 현재 화면 그대로)", PackageName = "" });
             _cmbApps.SelectedIndex = 0;
         }
@@ -2707,6 +2907,8 @@ namespace ScrcpyLauncher
             _settings.UseVirtualDisplay = _chkVirtualDisplay.IsChecked == true;
             _settings.VirtualDisplaySpec = _cmbVdSpec.Text.Trim();
             _settings.NoVdSystemDecorations = _chkNoVdDecorations.IsChecked == true;
+            _settings.OverlayOpacity = Math.Round(_sldHintOpacity.Value, 2);
+            _settings.OverlayScale = Math.Round(_sldHintScale.Value, 2);
 
             var app = _cmbApps.SelectedItem as AppItem;
             if (app != null)

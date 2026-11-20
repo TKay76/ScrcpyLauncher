@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace ScrcpyLauncher
 {
@@ -12,10 +13,17 @@ namespace ScrcpyLauncher
     {
         private readonly Canvas _canvas;
         private readonly Border _editToolbar;
+        private readonly Border _toastBanner;
+        private readonly TextBlock _txtToast;
+        private readonly DispatcherTimer _toastTimer;
         private KeymapProfile _profile;
         private bool _isEditMode;
+        private bool _showHints = true;
+        private double _hintOpacity = 1.0;
+        private double _hintScale = 1.0;
 
         public event Action ProfileEdited;
+        public bool HasActiveToast { get { return _toastBanner.Visibility == Visibility.Visible; } }
 
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_TRANSPARENT = 0x00000020;
@@ -113,8 +121,66 @@ namespace ScrcpyLauncher
             _editToolbar.Child = barPanel;
             grid.Children.Add(_editToolbar);
 
+            // Top-center floating toast banner (for instant profile switch notifications)
+            _txtToast = new TextBlock
+            {
+                Text = "",
+                Foreground = Brushes.White,
+                FontSize = 13,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            _toastBanner = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(220, 15, 23, 42)),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(200, 96, 165, 250)),
+                BorderThickness = new Thickness(1.5),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(16, 7, 16, 7),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 16, 0, 0),
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed,
+                Child = _txtToast
+            };
+            grid.Children.Add(_toastBanner);
+
+            _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1600) };
+            _toastTimer.Tick += (s, e) =>
+            {
+                _toastTimer.Stop();
+                _toastBanner.Visibility = Visibility.Collapsed;
+                if (!_isEditMode && !_showHints && IsVisible) Hide();
+            };
+
             Content = grid;
             SourceInitialized += (s, e) => ApplyWindowClickThrough(!_isEditMode);
+        }
+
+        public void SetHintAppearance(double opacity, double scale)
+        {
+            _hintOpacity = Math.Max(0.2, Math.Min(1.0, opacity));
+            _hintScale = Math.Max(0.65, Math.Min(1.6, scale));
+            Redraw();
+        }
+
+        public void SetShowHints(bool show)
+        {
+            _showHints = show;
+            _canvas.Visibility = (_isEditMode || _showHints) ? Visibility.Visible : Visibility.Collapsed;
+            if (!_isEditMode && !_showHints && !HasActiveToast && IsVisible)
+                Hide();
+        }
+
+        public void ShowToast(string message)
+        {
+            _txtToast.Text = message;
+            _toastBanner.Visibility = Visibility.Visible;
+            _canvas.Visibility = (_isEditMode || _showHints) ? Visibility.Visible : Visibility.Collapsed;
+            _toastTimer.Stop();
+            _toastTimer.Start();
         }
 
         public void SetProfile(KeymapProfile profile)
@@ -126,6 +192,7 @@ namespace ScrcpyLauncher
         public void SetEditMode(bool edit)
         {
             _isEditMode = edit;
+            _canvas.Visibility = (_isEditMode || _showHints) ? Visibility.Visible : Visibility.Collapsed;
             _canvas.Background = edit
                 ? new SolidColorBrush(Color.FromArgb(95, 15, 23, 42))
                 : Brushes.Transparent;
@@ -204,8 +271,12 @@ namespace ScrcpyLauncher
         public void Redraw()
         {
             _canvas.Children.Clear();
+            _canvas.Opacity = _isEditMode ? 1.0 : _hintOpacity;
+            _canvas.Visibility = (_isEditMode || _showHints) ? Visibility.Visible : Visibility.Collapsed;
             if (_profile == null || double.IsNaN(Width) || double.IsNaN(Height) || Width <= 20 || Height <= 20)
                 return;
+
+            double sc = _isEditMode ? 1.0 : _hintScale;
 
             // 1. WASD Joystick circle
             if (_profile.EnableJoystick)
@@ -218,7 +289,7 @@ namespace ScrcpyLauncher
                     rPx * 2, rPx * 2,
                     Color.FromArgb((byte)(_isEditMode ? 155 : 26), 37, 99, 235),
                     Color.FromArgb((byte)(_isEditMode ? 220 : 85), 147, 197, 253),
-                    true);
+                    true, sc);
                 PlaceAndMakeDraggable(joy, _profile.JoyX, _profile.JoyY, (nx, ny) => { _profile.JoyX = nx; _profile.JoyY = ny; });
             }
 
@@ -228,10 +299,10 @@ namespace ScrcpyLauncher
                 var cam = CreateBadge(
                     "시점",
                     KeyNameHelper.GetName(_profile.CameraToggleVk),
-                    56, 36,
+                    56 * sc, 36 * sc,
                     Color.FromArgb((byte)(_isEditMode ? 190 : 48), 124, 58, 237),
                     Color.FromArgb((byte)(_isEditMode ? 220 : 95), 196, 181, 253),
-                    false);
+                    false, sc);
                 PlaceAndMakeDraggable(cam, _profile.CameraX, _profile.CameraY, (nx, ny) => { _profile.CameraX = nx; _profile.CameraY = ny; });
             }
 
@@ -241,10 +312,10 @@ namespace ScrcpyLauncher
                 var lc = CreateBadge(
                     "좌클릭",
                     _profile.LeftClickLabel ?? "",
-                    54, 38,
+                    54 * sc, 38 * sc,
                     Color.FromArgb((byte)(_isEditMode ? 200 : 52), 220, 38, 38),
                     Color.FromArgb((byte)(_isEditMode ? 220 : 100), 252, 165, 165),
-                    false);
+                    false, sc);
                 PlaceAndMakeDraggable(lc, _profile.LeftClickX, _profile.LeftClickY, (nx, ny) => { _profile.LeftClickX = nx; _profile.LeftClickY = ny; });
             }
 
@@ -253,10 +324,10 @@ namespace ScrcpyLauncher
                 var rc = CreateBadge(
                     "우클릭",
                     _profile.RightClickLabel ?? "",
-                    54, 38,
+                    54 * sc, 38 * sc,
                     Color.FromArgb((byte)(_isEditMode ? 200 : 52), 217, 119, 6),
                     Color.FromArgb((byte)(_isEditMode ? 220 : 100), 253, 224, 71),
-                    false);
+                    false, sc);
                 PlaceAndMakeDraggable(rc, _profile.RightClickX, _profile.RightClickY, (nx, ny) => { _profile.RightClickX = nx; _profile.RightClickY = ny; });
             }
 
@@ -264,43 +335,49 @@ namespace ScrcpyLauncher
             foreach (var item in _profile.Keys)
             {
                 var k = item;
+                string keyTitle = k.KeyName;
                 if (k.IsWheelDrag)
                 {
+                    double baseSz = (_isEditMode ? 52 : 36) * sc;
+                    if (keyTitle.Length > 3) baseSz = Math.Max(baseSz, (keyTitle.Length * 6.5 + 14) * sc);
                     var wheelBadge = CreateBadge(
-                        k.KeyName,
+                        keyTitle,
                         _isEditMode ? (string.IsNullOrWhiteSpace(k.Label) ? "휠" : k.Label) : "휠",
-                        _isEditMode ? 52 : 36,
-                        _isEditMode ? 52 : 36,
+                        baseSz,
+                        baseSz,
                         Color.FromArgb((byte)(_isEditMode ? 190 : 54), 13, 148, 136),
                         Color.FromArgb((byte)(_isEditMode ? 225 : 105), 94, 234, 212),
-                        true);
+                        true, sc);
                     PlaceAndMakeDraggable(wheelBadge, k.X, k.Y, (nx, ny) => { k.X = nx; k.Y = ny; });
                 }
                 else
                 {
+                    double bw = (_isEditMode ? 48 : 32) * sc;
+                    double bh = (_isEditMode ? 36 : 24) * sc;
+                    if (keyTitle.Length > 3) bw = Math.Max(bw, (keyTitle.Length * 6.8 + 14) * sc);
                     var badge = CreateBadge(
-                        k.KeyName,
+                        keyTitle,
                         _isEditMode ? (k.Label ?? "") : "",
-                        _isEditMode ? 48 : 32,
-                        _isEditMode ? 36 : 24,
+                        bw,
+                        bh,
                         Color.FromArgb((byte)(_isEditMode ? 190 : 58), 15, 23, 42),
                         Color.FromArgb((byte)(_isEditMode ? 210 : 90), 148, 163, 184),
-                        false);
+                        false, sc);
                     PlaceAndMakeDraggable(badge, k.X, k.Y, (nx, ny) => { k.X = nx; k.Y = ny; });
                 }
             }
         }
 
-        private Border CreateBadge(string title, string sub, double w, double h, Color bg, Color borderCol, bool circle)
+        private Border CreateBadge(string title, string sub, double w, double h, Color bg, Color borderCol, bool circle, double fontScale)
         {
-            byte textAlpha = (byte)(_isEditMode ? 255 : 170);
-            byte subAlpha = (byte)(_isEditMode ? 220 : 135);
+            byte textAlpha = (byte)(_isEditMode ? 255 : 185);
+            byte subAlpha = (byte)(_isEditMode ? 220 : 145);
             var stack = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
             stack.Children.Add(new TextBlock
             {
                 Text = title,
                 Foreground = new SolidColorBrush(Color.FromArgb(textAlpha, 255, 255, 255)),
-                FontSize = circle ? 13 : 11,
+                FontSize = Math.Max(8.5, (circle ? 12.5 : 11.0) * fontScale),
                 FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center
             });
@@ -310,7 +387,7 @@ namespace ScrcpyLauncher
                 {
                     Text = sub,
                     Foreground = new SolidColorBrush(Color.FromArgb(subAlpha, 226, 232, 240)),
-                    FontSize = 9.5,
+                    FontSize = Math.Max(7.5, 9.5 * fontScale),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     MaxWidth = Math.Max(46, w - 4)

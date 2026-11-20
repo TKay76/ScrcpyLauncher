@@ -12,15 +12,30 @@ namespace ScrcpyLauncher
         public string Model { get; set; }
         public bool IsWifi { get; set; }
 
+        public string MaskedSerial
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(Serial)) return "";
+                if (IsWifi || Serial.Contains(":")) return Serial;
+                if (Serial.Length >= 6)
+                    return Serial.Substring(0, 3) + "••••" + Serial.Substring(Serial.Length - 2);
+                if (Serial.Length > 2)
+                    return Serial.Substring(0, 1) + "••••";
+                return "••••";
+            }
+        }
+
         public string DisplayName
         {
             get
             {
                 string conn = IsWifi ? "Wi-Fi" : "USB";
-                string name = string.IsNullOrWhiteSpace(Model) ? Serial : Model.Replace("_", " ");
+                string masked = MaskedSerial;
+                string name = string.IsNullOrWhiteSpace(Model) ? masked : Model.Replace("_", " ");
                 if (State != "device")
-                    return string.Format("{0} ({1} · {2}) — {3}", name, conn, State, Serial);
-                return string.Format("{0} ({1}) — {2}", name, conn, Serial);
+                    return string.Format("{0} ({1} · {2}) — {3}", name, conn, State, masked);
+                return string.Format("{0} ({1}) — {2}", name, conn, masked);
             }
         }
 
@@ -79,6 +94,8 @@ namespace ScrcpyLauncher
         public bool NoVdSystemDecorations { get; set; }
         public string StartAppPackage { get; set; }
         public string RecordFolder { get; set; }
+        public double OverlayOpacity { get; set; }
+        public double OverlayScale { get; set; }
 
         public LauncherSettings()
         {
@@ -105,6 +122,8 @@ namespace ScrcpyLauncher
             NoVdSystemDecorations = true;
             StartAppPackage = "";
             RecordFolder = "";
+            OverlayOpacity = 1.0;
+            OverlayScale = 1.0;
         }
 
         public static string GetSettingsPath()
