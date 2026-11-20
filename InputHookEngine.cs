@@ -71,6 +71,10 @@ namespace ScrcpyLauncher
         private const int WM_LBUTTONUP = 0x0202;
         private const int WM_RBUTTONDOWN = 0x0204;
         private const int WM_RBUTTONUP = 0x0205;
+        private const int WM_MBUTTONDOWN = 0x0207;
+        private const int WM_MBUTTONUP = 0x0208;
+        private const int WM_XBUTTONDOWN = 0x020B;
+        private const int WM_XBUTTONUP = 0x020C;
 
         private delegate IntPtr LowLevelProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -555,6 +559,54 @@ namespace ScrcpyLauncher
                 {
                     int msg = wParam.ToInt32();
                     var ms = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
+
+                    // Extra mouse buttons (Middle=4, Mouse4=5, Mouse5=6) work as action keys in both modes
+                    int extraVk = 0;
+                    bool extraDown = false;
+                    bool extraUp = false;
+                    if (msg == WM_MBUTTONDOWN) { extraVk = 4; extraDown = true; }
+                    else if (msg == WM_MBUTTONUP) { extraVk = 4; extraUp = true; }
+                    else if (msg == WM_XBUTTONDOWN || msg == WM_XBUTTONUP)
+                    {
+                        uint xbtn = (ms.mouseData >> 16) & 0xFFFF;
+                        if (xbtn == 1) extraVk = 5;
+                        else if (xbtn == 2) extraVk = 6;
+                        extraDown = (msg == WM_XBUTTONDOWN);
+                        extraUp = (msg == WM_XBUTTONUP);
+                    }
+
+                    if (extraVk > 0)
+                    {
+                        for (int i = 0; i < _profile.Keys.Count; i++)
+                        {
+                            var item = _profile.Keys[i];
+                            if (item.VkCode == extraVk)
+                            {
+                                lock (_stateLock)
+                                {
+                                    if (extraDown)
+                                    {
+                                        if (!_heldKeys.ContainsKey(item.VkCode))
+                                        {
+                                            long id = _nextTouchId++;
+                                            _heldKeys[item.VkCode] = id;
+                                            _client.InjectTouch(0, id, item.X, item.Y);
+                                        }
+                                    }
+                                    else if (extraUp)
+                                    {
+                                        long id;
+                                        if (_heldKeys.TryGetValue(item.VkCode, out id))
+                                        {
+                                            _heldKeys.Remove(item.VkCode);
+                                            _client.InjectTouch(1, id, item.X, item.Y);
+                                        }
+                                    }
+                                }
+                                return (IntPtr)1;
+                            }
+                        }
+                    }
 
                     if (_cameraLocked)
                     {

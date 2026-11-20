@@ -202,7 +202,7 @@ namespace ScrcpyLauncher
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.1 — Android 미러링";
+            Title = "Scrcpy Launcher v1.1.1 — Android 미러링";
             Width = 780;
             Height = 825;
             MinWidth = 720;
@@ -522,7 +522,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.1' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.1.1' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -1077,6 +1077,21 @@ namespace ScrcpyLauncher
                 _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F172A"));
                 e.Handled = true;
             };
+            _txtKmNewKey.PreviewMouseDown += (s, e) =>
+            {
+                int mvk = 0;
+                if (e.ChangedButton == MouseButton.Middle) mvk = 4;
+                else if (e.ChangedButton == MouseButton.XButton1) mvk = 5;
+                else if (e.ChangedButton == MouseButton.XButton2) mvk = 6;
+                if (mvk > 0)
+                {
+                    _pendingNewKeyVk = mvk;
+                    _txtKmNewKey.Text = KeyNameHelper.GetName(mvk);
+                    _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F172A"));
+                    e.Handled = true;
+                }
+            };
+            AttachGuide(_txtKmNewKey, "매핑 키 입력", "이 칸을 클릭한 뒤 원하는 키보드 키 또는 마우스 4 · 마우스 5 · 휠클릭 버튼을 누르면 등록할 수 있습니다.");
 
             Action onKmChanged = () =>
             {

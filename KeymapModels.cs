@@ -380,6 +380,9 @@ namespace ScrcpyLauncher
         {
             switch (vk)
             {
+                case 4: return "휠클릭";
+                case 5: return "마우스4";
+                case 6: return "마우스5";
                 case 9: return "Tab";
                 case 13: return "Enter";
                 case 16: case 160: case 161: return "Shift";
