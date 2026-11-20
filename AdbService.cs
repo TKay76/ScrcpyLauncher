@@ -198,6 +198,12 @@ namespace ScrcpyLauncher
             return await RunAsync(AdbPath, "start-server", 10000);
         }
 
+        public async Task WakeDeviceAsync(string serial)
+        {
+            if (!IsValid || string.IsNullOrWhiteSpace(serial)) return;
+            await RunAsync(AdbPath, string.Format("-s \"{0}\" shell input keyevent KEYCODE_WAKEUP", serial), 3000);
+        }
+
         public async Task<Tuple<bool, string>> CaptureScreenshotAsync(string serial, string outputPath, string displayId)
         {
             if (!IsValid || string.IsNullOrWhiteSpace(serial))

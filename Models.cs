@@ -58,6 +58,8 @@ namespace ScrcpyLauncher
     {
         public string CustomScrcpyDir { get; set; }
         public string LastWirelessAddress { get; set; }
+        public string ControlMode { get; set; } // "keymap", "gamepad", "normal"
+        public string SelectedKeymapProfile { get; set; }
         public string Codec { get; set; }
         public int BitrateMbps { get; set; }
         public int MaxSize { get; set; }
@@ -70,6 +72,8 @@ namespace ScrcpyLauncher
         public bool NoAudio { get; set; }
         public bool Fullscreen { get; set; }
         public bool PrintFps { get; set; }
+        public bool DisableRightClickBack { get; set; }
+        public bool KeymapExclusiveInput { get; set; }
         public bool UseVirtualDisplay { get; set; }
         public string VirtualDisplaySpec { get; set; }
         public bool NoVdSystemDecorations { get; set; }
@@ -80,6 +84,8 @@ namespace ScrcpyLauncher
         {
             CustomScrcpyDir = "";
             LastWirelessAddress = "";
+            ControlMode = "keymap";
+            SelectedKeymapProfile = "";
             Codec = "h264";
             BitrateMbps = 20;
             MaxSize = 0;
@@ -87,13 +93,15 @@ namespace ScrcpyLauncher
             RenderDriver = "auto";
             TurnScreenOff = true;
             StayAwake = true;
-            UhidGamepad = true;
+            UhidGamepad = false;
             LowLatency = true;
             NoAudio = false;
             Fullscreen = false;
             PrintFps = true;
+            DisableRightClickBack = true;
+            KeymapExclusiveInput = true;
             UseVirtualDisplay = true;
-            VirtualDisplaySpec = "1920x1080";
+            VirtualDisplaySpec = "1920x1080/280";
             NoVdSystemDecorations = true;
             StartAppPackage = "";
             RecordFolder = "";

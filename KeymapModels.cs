@@ -1,0 +1,403 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Web.Script.Serialization;
+
+namespace ScrcpyLauncher
+{
+    public class KeyBindItem
+    {
+        public int VkCode { get; set; }
+        public string Label { get; set; }
+        public int X { get; set; } // 0..10000
+        public int Y { get; set; } // 0..10000
+
+        public string KeyName
+        {
+            get { return KeyNameHelper.GetName(VkCode); }
+        }
+
+        public override string ToString()
+        {
+            string desc = string.IsNullOrWhiteSpace(Label) ? "" : " — " + Label;
+            return string.Format("[{0}]{1}  ({2:F1}%, {3:F1}%)", KeyName, desc, X / 100.0, Y / 100.0);
+        }
+    }
+
+    public class KeymapProfile
+    {
+        public string Name { get; set; }
+        public bool IsBuiltIn { get; set; }
+
+        // WASD Joystick
+        public bool EnableJoystick { get; set; }
+        public int JoyX { get; set; }
+        public int JoyY { get; set; }
+        public int JoyRadius { get; set; }
+        public int JoyUpVk { get; set; }
+        public int JoyDownVk { get; set; }
+        public int JoyLeftVk { get; set; }
+        public int JoyRightVk { get; set; }
+        public int SprintVk { get; set; }
+        public double SprintScale { get; set; }
+
+        // Mouse Camera Look
+        public bool EnableMouseCamera { get; set; }
+        public int CameraToggleVk { get; set; }
+        public int CameraX { get; set; }
+        public int CameraY { get; set; }
+        public double CameraSensX { get; set; }
+        public double CameraSensY { get; set; }
+
+        // Mouse Clicks (while camera locked)
+        public bool EnableLeftClick { get; set; }
+        public int LeftClickX { get; set; }
+        public int LeftClickY { get; set; }
+        public string LeftClickLabel { get; set; }
+
+        public bool EnableRightClick { get; set; }
+        public int RightClickX { get; set; }
+        public int RightClickY { get; set; }
+        public string RightClickLabel { get; set; }
+
+        public List<KeyBindItem> Keys { get; set; }
+
+        public KeymapProfile()
+        {
+            Name = "새 프로파일";
+            EnableJoystick = true;
+            JoyX = 1554;
+            JoyY = 7442;
+            JoyRadius = 792;
+            JoyUpVk = 87;    // W
+            JoyDownVk = 83;  // S
+            JoyLeftVk = 65;  // A
+            JoyRightVk = 68; // D
+            SprintVk = 16;   // Shift
+            SprintScale = 2.4;
+
+            EnableMouseCamera = true;
+            CameraToggleVk = 18; // Alt
+            CameraX = 6335;
+            CameraY = 2862;
+            CameraSensX = 1.0;
+            CameraSensY = 1.0;
+
+            EnableLeftClick = true;
+            LeftClickX = 8462;
+            LeftClickY = 7876;
+            LeftClickLabel = "공격/충전";
+
+            EnableRightClick = false;
+            RightClickX = 7411;
+            RightClickY = 7578;
+            RightClickLabel = "회피";
+
+            Keys = new List<KeyBindItem>();
+        }
+
+        public KeymapProfile Clone(string newName)
+        {
+            var serializer = new JavaScriptSerializer();
+            string json = serializer.Serialize(this);
+            var copy = serializer.Deserialize<KeymapProfile>(json);
+            copy.Name = newName;
+            copy.IsBuiltIn = false;
+            return copy;
+        }
+
+        public static List<KeymapProfile> GetBuiltInPresets()
+        {
+            var list = new List<KeymapProfile>();
+
+            // 1. Monster Hunter Outlanders — Classic Mode
+            var mhoAdv = new KeymapProfile
+            {
+                Name = "[기본] 몬헌 아웃랜더스 (클래식 모드)",
+                IsBuiltIn = true,
+                EnableJoystick = true,
+                JoyX = 1554,
+                JoyY = 7442,
+                JoyRadius = 850,
+                SprintVk = 16, // Shift
+                SprintScale = 2.4,
+                EnableMouseCamera = true,
+                CameraToggleVk = 18, // Alt
+                CameraX = 6060,
+                CameraY = 2780,
+                CameraSensX = 1.0,
+                CameraSensY = 1.0,
+                EnableLeftClick = true,
+                LeftClickX = 8460,
+                LeftClickY = 7880,
+                LeftClickLabel = "일반 공격",
+                EnableRightClick = true,
+                RightClickX = 7410,
+                RightClickY = 7000,
+                RightClickLabel = "특수 공격",
+                Keys = new List<KeyBindItem>
+                {
+                    new KeyBindItem { VkCode = 32, Label = "회피", X = 9330, Y = 8750 },
+                    new KeyBindItem { VkCode = 81, Label = "특수/Q", X = 7470, Y = 8750 },
+                    new KeyBindItem { VkCode = 69, Label = "기술/E", X = 8390, Y = 6050 },
+                    new KeyBindItem { VkCode = 82, Label = "동료 오의", X = 6710, Y = 6480 },
+                    new KeyBindItem { VkCode = 70, Label = "상호작용", X = 5930, Y = 5280 },
+                    new KeyBindItem { VkCode = 67, Label = "아이템 빠른 사용", X = 6790, Y = 7580 },
+                    new KeyBindItem { VkCode = 71, Label = "아이템", X = 6780, Y = 8760 },
+                    new KeyBindItem { VkCode = 88, Label = "아이템 취소", X = 9010, Y = 6920 },
+                    new KeyBindItem { VkCode = 49, Label = "오의 1번", X = 9290, Y = 2000 },
+                    new KeyBindItem { VkCode = 50, Label = "슬롯 2", X = 9290, Y = 3180 },
+                    new KeyBindItem { VkCode = 51, Label = "슬롯 3", X = 9290, Y = 4450 },
+                    new KeyBindItem { VkCode = 52, Label = "슬롯 4", X = 9290, Y = 5700 },
+                    new KeyBindItem { VkCode = 90, Label = "버튼 Z", X = 9340, Y = 6920 },
+                    new KeyBindItem { VkCode = 72, Label = "버튼 H", X = 4860, Y = 7280 },
+                    new KeyBindItem { VkCode = 86, Label = "버튼 V", X = 1340, Y = 3850 },
+                    new KeyBindItem { VkCode = 84, Label = "버튼 T", X = 6740, Y = 3900 },
+                    new KeyBindItem { VkCode = 74, Label = "구출", X = 4900, Y = 8850 },
+                    new KeyBindItem { VkCode = 9, Label = "Tab", X = 7760, Y = 3950 },
+                    new KeyBindItem { VkCode = 77, Label = "지도", X = 960, Y = 1800 },
+                    new KeyBindItem { VkCode = 192, Label = "건너뛰기", X = 9020, Y = 850 },
+                    new KeyBindItem { VkCode = 27, Label = "메뉴", X = 9660, Y = 850 }
+                }
+            };
+            list.Add(mhoAdv);
+
+            // 2. Monster Hunter Outlanders — Starting Mode
+            var mhoSimple = new KeymapProfile
+            {
+                Name = "[기본] 몬헌 아웃랜더스 (스타팅 모드)",
+                IsBuiltIn = true,
+                EnableJoystick = true,
+                JoyX = 1554,
+                JoyY = 7442,
+                JoyRadius = 792,
+                SprintVk = 16,
+                SprintScale = 2.5,
+                EnableMouseCamera = false,
+                EnableLeftClick = false,
+                EnableRightClick = false,
+                Keys = new List<KeyBindItem>
+                {
+                    new KeyBindItem { VkCode = 37, Label = "버튼 ←", X = 7795, Y = 7094 },
+                    new KeyBindItem { VkCode = 38, Label = "버튼 ↑", X = 8580, Y = 5862 },
+                    new KeyBindItem { VkCode = 39, Label = "버튼 →", X = 9343, Y = 7396 },
+                    new KeyBindItem { VkCode = 40, Label = "버튼 ↓", X = 8608, Y = 8579 }
+                }
+            };
+            list.Add(mhoSimple);
+
+            return list;
+        }
+
+        public static string GetKeymapsDir()
+        {
+            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "keymaps");
+        }
+
+        public static List<KeymapProfile> LoadCustomProfiles()
+        {
+            var result = new List<KeymapProfile>();
+            string dir = GetKeymapsDir();
+            if (!Directory.Exists(dir)) return result;
+
+            var serializer = new JavaScriptSerializer();
+            foreach (var file in Directory.GetFiles(dir, "*.json"))
+            {
+                try
+                {
+                    string json = File.ReadAllText(file, Encoding.UTF8);
+                    var p = serializer.Deserialize<KeymapProfile>(json);
+                    if (p != null)
+                    {
+                        p.IsBuiltIn = false;
+                        if (p.Keys == null) p.Keys = new List<KeyBindItem>();
+                        result.Add(p);
+                    }
+                }
+                catch { }
+            }
+            return result;
+        }
+
+        public void SaveCustom()
+        {
+            string dir = GetKeymapsDir();
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            string safeName = string.Join("_", (Name ?? "profile").Split(Path.GetInvalidFileNameChars())).Trim();
+            if (string.IsNullOrEmpty(safeName)) safeName = "profile";
+            string path = Path.Combine(dir, safeName + ".json");
+            var serializer = new JavaScriptSerializer();
+            IsBuiltIn = false;
+            File.WriteAllText(path, serializer.Serialize(this), new UTF8Encoding(false));
+        }
+
+        public static KeymapProfile ImportFromLdKmp(string filePath)
+        {
+            string json = File.ReadAllText(filePath, Encoding.UTF8);
+            var serializer = new JavaScriptSerializer();
+            var root = serializer.Deserialize<Dictionary<string, object>>(json);
+            if (root == null || !root.ContainsKey("keyboardMappings"))
+                throw new Exception("유효한 LDPlayer .kmp 파일이 아닙니다.");
+
+            var profile = new KeymapProfile
+            {
+                Name = Path.GetFileNameWithoutExtension(filePath),
+                IsBuiltIn = false,
+                EnableJoystick = false,
+                EnableMouseCamera = false,
+                EnableLeftClick = false,
+                EnableRightClick = false,
+                Keys = new List<KeyBindItem>()
+            };
+
+            var mappings = root["keyboardMappings"] as System.Collections.ArrayList;
+            if (mappings == null) return profile;
+
+            foreach (var entryObj in mappings)
+            {
+                var entry = entryObj as Dictionary<string, object>;
+                if (entry == null) continue;
+                string cls = entry.ContainsKey("class") ? Convert.ToString(entry["class"]) : "";
+                var data = entry.ContainsKey("data") ? entry["data"] as Dictionary<string, object> : null;
+                if (data == null) continue;
+
+                string desc = data.ContainsKey("description") ? Convert.ToString(data["description"]) : "";
+
+                if (cls == "ClassKeyboardDisc")
+                {
+                    profile.EnableJoystick = true;
+                    int ox, oy;
+                    ReadPoint(data, "origin", out ox, out oy);
+                    profile.JoyX = ox;
+                    profile.JoyY = oy;
+                    profile.JoyRadius = ReadInt(data, "radius", 792);
+                    profile.JoyUpVk = ReadInt(data, "upKey", 87);
+                    profile.JoyDownVk = ReadInt(data, "downKey", 83);
+                    profile.JoyLeftVk = ReadInt(data, "leftKey", 65);
+                    profile.JoyRightVk = ReadInt(data, "rightKey", 68);
+                }
+                else if (cls == "ClassMouseDrag")
+                {
+                    profile.EnableMouseCamera = true;
+                    profile.CameraToggleVk = ReadInt(data, "key", 18);
+                    int ox, oy;
+                    ReadPoint(data, "origin", out ox, out oy);
+                    profile.CameraX = ox;
+                    profile.CameraY = oy;
+                    profile.CameraSensX = ReadDouble(data, "sensitivity", 1.0);
+                    profile.CameraSensY = ReadDouble(data, "sensitivity_y", 1.0);
+                }
+                else if (cls == "ClassMouseTrigger")
+                {
+                    profile.EnableLeftClick = true;
+                    int px, py;
+                    ReadPoint(data, "point", out px, out py);
+                    profile.LeftClickX = px;
+                    profile.LeftClickY = py;
+                    profile.LeftClickLabel = string.IsNullOrWhiteSpace(desc) ? "좌클릭" : desc;
+                }
+                else if (cls == "ClassKeyboardCurve")
+                {
+                    int vk = ReadInt(data, "key", 0);
+                    var curve = data.ContainsKey("curve") ? data["curve"] as System.Collections.ArrayList : null;
+                    if (vk > 0 && curve != null && curve.Count > 0)
+                    {
+                        var first = curve[0] as Dictionary<string, object>;
+                        if (first != null)
+                        {
+                            profile.Keys.Add(new KeyBindItem
+                            {
+                                VkCode = vk,
+                                Label = desc,
+                                X = ReadInt(first, "x", 5000),
+                                Y = ReadInt(first, "y", 5000)
+                            });
+                        }
+                    }
+                }
+                else if (cls == "ClassKeyboardClick")
+                {
+                    int vk = ReadInt(data, "key", 0);
+                    if (vk > 0)
+                    {
+                        int px, py;
+                        ReadPoint(data, "point", out px, out py);
+                        profile.Keys.Add(new KeyBindItem { VkCode = vk, Label = desc, X = px, Y = py });
+                    }
+                }
+                else if (cls == "ClassKeyboardMacros")
+                {
+                    int vk = ReadInt(data, "key", 0);
+                    string macros = data.ContainsKey("macros") ? Convert.ToString(data["macros"]) : "";
+                    if (macros.IndexOf("wasd-scale", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        profile.SprintVk = vk > 0 ? vk : 16;
+                        var m = System.Text.RegularExpressions.Regex.Match(macros, @"wasd-scale\s+([\d\.]+)");
+                        double sc;
+                        if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out sc))
+                            profile.SprintScale = sc;
+                    }
+                    else if (vk > 0 && data.ContainsKey("origin"))
+                    {
+                        int ox, oy;
+                        ReadPoint(data, "origin", out ox, out oy);
+                        profile.Keys.Add(new KeyBindItem { VkCode = vk, Label = desc, X = ox, Y = oy });
+                    }
+                }
+            }
+
+            return profile;
+        }
+
+        private static void ReadPoint(Dictionary<string, object> data, string key, out int x, out int y)
+        {
+            x = 5000; y = 5000;
+            if (!data.ContainsKey(key)) return;
+            var pt = data[key] as Dictionary<string, object>;
+            if (pt == null) return;
+            x = ReadInt(pt, "x", 5000);
+            y = ReadInt(pt, "y", 5000);
+        }
+
+        private static int ReadInt(Dictionary<string, object> d, string key, int def)
+        {
+            if (!d.ContainsKey(key) || d[key] == null) return def;
+            try { return Convert.ToInt32(d[key]); } catch { return def; }
+        }
+
+        private static double ReadDouble(Dictionary<string, object> d, string key, double def)
+        {
+            if (!d.ContainsKey(key) || d[key] == null) return def;
+            try { return Convert.ToDouble(d[key]); } catch { return def; }
+        }
+    }
+
+    public static class KeyNameHelper
+    {
+        public static string GetName(int vk)
+        {
+            switch (vk)
+            {
+                case 9: return "Tab";
+                case 13: return "Enter";
+                case 16: case 160: case 161: return "Shift";
+                case 17: case 162: case 163: return "Ctrl";
+                case 18: case 164: case 165: return "Alt";
+                case 27: return "ESC";
+                case 32: return "Space";
+                case 37: return "←";
+                case 38: return "↑";
+                case 39: return "→";
+                case 40: return "↓";
+                case 192: return "` (~)";
+                default:
+                    if (vk >= 48 && vk <= 57) return ((char)vk).ToString();
+                    if (vk >= 65 && vk <= 90) return ((char)vk).ToString();
+                    if (vk >= 112 && vk <= 123) return "F" + (vk - 111);
+                    return "VK_" + vk;
+            }
+        }
+    }
+}

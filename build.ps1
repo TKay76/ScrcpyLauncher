@@ -24,6 +24,10 @@ $outExe = Join-Path $dir "ScrcpyLauncher.exe"
   "$dir\AdbService.cs" `
   "$dir\UpdateChecker.cs" `
   "$dir\FpsOverlayWindow.cs" `
+  "$dir\KeymapModels.cs" `
+  "$dir\ScrcpyControlClient.cs" `
+  "$dir\InputHookEngine.cs" `
+  "$dir\KeymapOverlayWindow.cs" `
   "$dir\MainWindow.cs"
 
 if ($LASTEXITCODE -ne 0) {
