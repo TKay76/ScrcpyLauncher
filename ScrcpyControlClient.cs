@@ -34,6 +34,9 @@ namespace ScrcpyLauncher
             get { return _ctrlTcp != null && _ctrlTcp.Connected && _ctrlStream != null; }
         }
 
+        public int ScreenWidth { get { return _screenWidth; } }
+        public int ScreenHeight { get { return _screenHeight; } }
+
         public ScrcpyControlClient(AdbService adb)
         {
             _adb = adb;

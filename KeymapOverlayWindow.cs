@@ -212,7 +212,7 @@ namespace ScrcpyLauncher
                 SetWindowLong(hwnd, GWL_EXSTYLE, (ex | WS_EX_TOOLWINDOW) & ~(WS_EX_TRANSPARENT | WS_EX_NOACTIVATE));
         }
 
-        public void SyncToTargetWindow(IntPtr targetHwnd, IntPtr launcherHwnd)
+        public void SyncToTargetWindow(IntPtr targetHwnd, IntPtr launcherHwnd, int videoW = 0, int videoH = 0)
         {
             if (targetHwnd == IntPtr.Zero || !IsWindowVisible(targetHwnd) || IsIconic(targetHwnd))
             {
@@ -247,13 +247,39 @@ namespace ScrcpyLauncher
             }
             catch { }
 
-            double w = (rc.Right - rc.Left) / scale;
-            double h = (rc.Bottom - rc.Top) / scale;
+            double cw = rc.Right - rc.Left;
+            double ch = rc.Bottom - rc.Top;
+            if (cw <= 20 || ch <= 20) return;
+
+            // Snap overlay tightly to the actual centered video rect (excludes letterbox/pillarbox black bars)
+            double vx = 0, vy = 0, vw = cw, vh = ch;
+            if (videoW > 0 && videoH > 0)
+            {
+                double winAspect = cw / ch;
+                double vidAspect = (double)videoW / videoH;
+                if (winAspect > vidAspect + 0.002)
+                {
+                    vh = ch;
+                    vw = ch * vidAspect;
+                    vx = (cw - vw) / 2.0;
+                    vy = 0;
+                }
+                else if (winAspect < vidAspect - 0.002)
+                {
+                    vw = cw;
+                    vh = cw / vidAspect;
+                    vx = 0;
+                    vy = (ch - vh) / 2.0;
+                }
+            }
+
+            double w = vw / scale;
+            double h = vh / scale;
             if (w <= 20 || h <= 20) return;
 
             bool sizeChanged = Math.Abs(Width - w) > 1 || Math.Abs(Height - h) > 1;
-            Left = pt.X / scale;
-            Top = pt.Y / scale;
+            Left = (pt.X + vx) / scale;
+            Top = (pt.Y + vy) / scale;
             Width = w;
             Height = h;
 
@@ -449,6 +475,81 @@ namespace ScrcpyLauncher
                 el.ReleaseMouseCapture();
                 e.Handled = true;
             };
+        }
+    }
+
+    public class CursorHiderWindow : Window
+    {
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TOOLWINDOW = 0x00000080;
+        private const int WS_EX_NOACTIVATE = 0x08000000;
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private const uint SWP_SHOWWINDOW = 0x0040;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+        public CursorHiderWindow()
+        {
+            WindowStyle = WindowStyle.None;
+            AllowsTransparency = true;
+            // Alpha=1 is visually invisible while still hit-testing the pinned cursor so Cursors.None hides it safely
+            Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+            Cursor = Cursors.None;
+            Topmost = true;
+            ShowInTaskbar = false;
+            ShowActivated = false;
+            ResizeMode = ResizeMode.NoResize;
+            Width = 32;
+            Height = 32;
+
+            SourceInitialized += (s, e) =>
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd != IntPtr.Zero)
+                {
+                    int ex = GetWindowLong(hwnd, GWL_EXSTYLE);
+                    SetWindowLong(hwnd, GWL_EXSTYLE, ex | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+                }
+            };
+        }
+
+        public void ShowAtScreenPoint(int screenX, int screenY, IntPtr targetHwnd)
+        {
+            double scale = 1.0;
+            try
+            {
+                if (targetHwnd != IntPtr.Zero)
+                {
+                    uint dpi = GetDpiForWindow(targetHwnd);
+                    if (dpi >= 96) scale = dpi / 96.0;
+                }
+            }
+            catch { }
+
+            Left = (screenX / scale) - (Width / 2.0);
+            Top = (screenY / scale) - (Height / 2.0);
+            if (!IsVisible) Show();
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+                SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+
+        public void HideSafe()
+        {
+            if (IsVisible) Hide();
         }
     }
 }

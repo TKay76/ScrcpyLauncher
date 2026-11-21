@@ -26,6 +26,7 @@ namespace ScrcpyLauncher
         private readonly DispatcherTimer _overlayTimer;
         private FpsOverlayWindow _fpsOverlay;
         private KeymapOverlayWindow _keymapOverlay;
+        private CursorHiderWindow _cursorHider;
         private ScrcpyControlClient _controlClient;
         private InputHookEngine _hookEngine;
         private List<KeymapProfile> _keymapProfiles = new List<KeymapProfile>();
@@ -217,7 +218,7 @@ namespace ScrcpyLauncher
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.3 — Android 미러링";
+            Title = "Scrcpy Launcher v1.3.1 — Android 미러링";
             Width = 780;
             Height = 845;
             MinWidth = 720;
@@ -248,6 +249,18 @@ namespace ScrcpyLauncher
             _controlClient = new ScrcpyControlClient(_adb);
             _hookEngine = new InputHookEngine(_controlClient);
             _hookEngine.StatusMessage += (msg) => Dispatcher.BeginInvoke(new Action(() => AppendLog(msg)));
+            _hookEngine.CameraLockChanged += (locked) => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (locked && _scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                {
+                    if (_cursorHider == null) _cursorHider = new CursorHiderWindow();
+                    _cursorHider.ShowAtScreenPoint(_hookEngine.CenterScreenX, _hookEngine.CenterScreenY, _scrcpyProcess.MainWindowHandle);
+                }
+                else if (_cursorHider != null)
+                {
+                    _cursorHider.HideSafe();
+                }
+            }));
             _hookEngine.HintToggleRequested += () => Dispatcher.BeginInvoke(new Action(() =>
             {
                 bool next = !(_chkKmHints.IsChecked == true);
@@ -552,7 +565,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.3' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.3.1' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -1513,6 +1526,11 @@ namespace ScrcpyLauncher
                 try { _keymapOverlay.Close(); } catch { }
                 _keymapOverlay = null;
             }
+            if (_cursorHider != null)
+            {
+                try { _cursorHider.Close(); } catch { }
+                _cursorHider = null;
+            }
             if (_hookEngine != null) _hookEngine.Dispose();
             if (_controlClient != null) _controlClient.Dispose();
             SaveSettingsFromUi();
@@ -2404,6 +2422,8 @@ namespace ScrcpyLauncher
                 _fpsOverlay.Hide();
             if (_keymapOverlay != null && _keymapOverlay.IsVisible)
                 _keymapOverlay.Hide();
+            if (_cursorHider != null)
+                _cursorHider.HideSafe();
         }
 
         private void SyncFpsOverlay()
@@ -2420,18 +2440,22 @@ namespace ScrcpyLauncher
                 IntPtr targetHwnd = _scrcpyProcess.MainWindowHandle;
                 IntPtr launcherHwnd = new WindowInteropHelper(this).Handle;
 
+                int vidW = _activeDisplayWidth > 0 ? _activeDisplayWidth : (_controlClient != null ? _controlClient.ScreenWidth : 0);
+                int vidH = _activeDisplayHeight > 0 ? _activeDisplayHeight : (_controlClient != null ? _controlClient.ScreenHeight : 0);
+
                 if (_fpsOverlay != null && _chkPrintFps.IsChecked == true)
                     _fpsOverlay.SyncToTargetWindow(targetHwnd, launcherHwnd);
 
                 if (_hookEngine != null && _hookEngine.IsActive)
                 {
                     _hookEngine.SetTargetWindow(targetHwnd);
+                    _hookEngine.SetVideoSize(vidW, vidH);
                     _hookEngine.CheckFocusSafety();
                 }
 
                 if (_keymapOverlay != null && (_keymapOverlay.IsEditMode || (_hookEngine.IsActive && (_chkKmHints.IsChecked == true || _keymapOverlay.HasActiveToast))))
                 {
-                    _keymapOverlay.SyncToTargetWindow(targetHwnd, launcherHwnd);
+                    _keymapOverlay.SyncToTargetWindow(targetHwnd, launcherHwnd, vidW, vidH);
                 }
             }
             catch
@@ -2579,6 +2603,8 @@ namespace ScrcpyLauncher
                 _controlClient.Disconnect();
             if (_keymapOverlay != null && !_keymapOverlay.IsEditMode && _keymapOverlay.IsVisible)
                 _keymapOverlay.Hide();
+            if (_cursorHider != null)
+                _cursorHider.HideSafe();
             UpdateUiStates();
         }
 

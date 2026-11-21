@@ -31,6 +31,20 @@ namespace ScrcpyLauncher
         private DateTime _lastCamMotionUtc = DateTime.MinValue;
         private int _centerScreenX = 0;
         private int _centerScreenY = 0;
+        private int _videoWidth = 0;
+        private int _videoHeight = 0;
+
+        public int CenterScreenX { get { return _centerScreenX; } }
+        public int CenterScreenY { get { return _centerScreenY; } }
+
+        public void SetVideoSize(int width, int height)
+        {
+            if (width > 0 && height > 0)
+            {
+                _videoWidth = width;
+                _videoHeight = height;
+            }
+        }
 
         // Manual cursor touch when camera lock is OFF (routes through our SAME control socket to avoid 2-server MotionEvent conflicts!)
         private long _manualTouchId = 0;
@@ -692,7 +706,7 @@ namespace ScrcpyLauncher
             _joyMoving = true;
         }
 
-        private bool TryScreenToClientNorm(int screenX, int screenY, out int normX, out int normY)
+        private bool TryScreenToClientNorm(int screenX, int screenY, out int normX, out int normY, bool clampOutside = false)
         {
             normX = 5000; normY = 5000;
             RECT rc;
@@ -704,12 +718,39 @@ namespace ScrcpyLauncher
             int h = rc.Bottom - rc.Top;
             if (w <= 0 || h <= 0) return false;
 
-            int rx = screenX - origin.X;
-            int ry = screenY - origin.Y;
-            if (rx < 0 || rx > w || ry < 0 || ry > h) return false;
+            // Compute actual centered video rect inside client rect (accounts for left/right pillarbox & top/bottom letterbox!)
+            double vx = 0, vy = 0, vw = w, vh = h;
+            int vidW = _videoWidth > 0 ? _videoWidth : _client.ScreenWidth;
+            int vidH = _videoHeight > 0 ? _videoHeight : _client.ScreenHeight;
+            if (vidW > 0 && vidH > 0)
+            {
+                double winAspect = (double)w / h;
+                double vidAspect = (double)vidW / vidH;
+                if (winAspect > vidAspect + 0.002)
+                {
+                    vh = h;
+                    vw = h * vidAspect;
+                    vx = (w - vw) / 2.0;
+                    vy = 0;
+                }
+                else if (winAspect < vidAspect - 0.002)
+                {
+                    vw = w;
+                    vh = w / vidAspect;
+                    vx = 0;
+                    vy = (h - vh) / 2.0;
+                }
+            }
 
-            normX = (int)Math.Round((rx / (double)w) * 10000.0);
-            normY = (int)Math.Round((ry / (double)h) * 10000.0);
+            double rx = screenX - origin.X;
+            double ry = screenY - origin.Y;
+            if (!clampOutside && (rx < vx || rx > vx + vw || ry < vy || ry > vy + vh))
+                return false;
+
+            double nxD = ((rx - vx) / vw) * 10000.0;
+            double nyD = ((ry - vy) / vh) * 10000.0;
+            normX = Math.Max(0, Math.Min(10000, (int)Math.Round(nxD)));
+            normY = Math.Max(0, Math.Min(10000, (int)Math.Round(nyD)));
             return true;
         }
 
@@ -944,7 +985,7 @@ namespace ScrcpyLauncher
                         }
                         else if (msg == WM_MOUSEMOVE && _manualTouchId != 0)
                         {
-                            if (TryScreenToClientNorm(ms.pt.X, ms.pt.Y, out nx, out ny))
+                            if (TryScreenToClientNorm(ms.pt.X, ms.pt.Y, out nx, out ny, true))
                             {
                                 lock (_stateLock)
                                 {
