@@ -282,18 +282,74 @@ namespace ScrcpyLauncher
 
         public string ExportToShareCode()
         {
-            var copy = Clone(Name ?? "공유 프로파일");
-            copy.FilePath = null;
-            copy.IsBuiltIn = false;
-            var serializer = new JavaScriptSerializer();
-            byte[] raw = Encoding.UTF8.GetBytes(serializer.Serialize(copy));
-            using (var ms = new MemoryStream())
+            using (var msOut = new MemoryStream())
             {
-                using (var gz = new GZipStream(ms, CompressionMode.Compress, true))
+                using (var df = new DeflateStream(msOut, CompressionLevel.Optimal, true))
+                using (var bw = new BinaryWriter(df, Encoding.UTF8, true))
                 {
-                    gz.Write(raw, 0, raw.Length);
+                    bw.Write((byte)2); // format v2
+                    bw.Write(Name ?? "공유 프로파일");
+
+                    byte flags = 0;
+                    if (EnableJoystick) flags |= 1;
+                    if (EnableMouseCamera) flags |= 2;
+                    if (EnableLeftClick) flags |= 4;
+                    if (EnableRightClick) flags |= 8;
+                    bw.Write(flags);
+
+                    if (EnableJoystick)
+                    {
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, JoyX)));
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, JoyY)));
+                        bw.Write((ushort)Math.Max(100, Math.Min(5000, JoyRadius)));
+                        bw.Write((byte)(JoyUpVk & 0xFF));
+                        bw.Write((byte)(JoyDownVk & 0xFF));
+                        bw.Write((byte)(JoyLeftVk & 0xFF));
+                        bw.Write((byte)(JoyRightVk & 0xFF));
+                        bw.Write((byte)(SprintVk & 0xFF));
+                        bw.Write((byte)Math.Max(10, Math.Min(50, (int)Math.Round(SprintScale * 10.0))));
+                    }
+
+                    if (EnableMouseCamera)
+                    {
+                        bw.Write((byte)(CameraToggleVk & 0xFF));
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, CameraX)));
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, CameraY)));
+                        bw.Write((byte)Math.Max(2, Math.Min(60, (int)Math.Round(CameraSensX * 20.0))));
+                        bw.Write((byte)Math.Max(2, Math.Min(60, (int)Math.Round(CameraSensY * 20.0))));
+                    }
+
+                    if (EnableLeftClick)
+                    {
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, LeftClickX)));
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, LeftClickY)));
+                        bw.Write("");
+                    }
+
+                    if (EnableRightClick)
+                    {
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, RightClickX)));
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, RightClickY)));
+                        bw.Write("");
+                    }
+
+                    var keys = Keys ?? new List<KeyBindItem>();
+                    int count = Math.Min(255, keys.Count);
+                    bw.Write((byte)count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        var k = keys[i];
+                        bool hasCustomRad = k.IsWheelDrag && k.WheelRadius != 1500;
+                        // Omit per-key cosmetic labels in SLKM2 so even 25+ key profiles stay well under 300 chars (DCInside 400-char comment limit)
+                        byte kf = (byte)((k.Modifiers & 0x07) | (k.IsWheelDrag ? 8 : 0) | (hasCustomRad ? 16 : 0));
+                        bw.Write((byte)(k.VkCode & 0xFF));
+                        bw.Write(kf);
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, k.X)));
+                        bw.Write((ushort)Math.Max(0, Math.Min(10000, k.Y)));
+                        if (hasCustomRad) bw.Write((ushort)Math.Max(200, Math.Min(5000, k.WheelRadius)));
+                    }
                 }
-                return "SLKM1:" + Convert.ToBase64String(ms.ToArray());
+                return "SLKM2:" + Convert.ToBase64String(msOut.ToArray());
             }
         }
 
@@ -303,12 +359,99 @@ namespace ScrcpyLauncher
                 throw new Exception("프리셋 코드가 비어 있습니다.");
 
             string trimmed = code.Trim();
-            if (!trimmed.StartsWith("SLKM1:", StringComparison.OrdinalIgnoreCase))
-                throw new Exception("올바른 Scrcpy Launcher 프리셋 코드(SLKM1:...)가 아닙니다.");
+            if (trimmed.StartsWith("SLKM2:", StringComparison.OrdinalIgnoreCase))
+            {
+                byte[] compressed = Convert.FromBase64String(trimmed.Substring(6).Trim());
+                using (var msIn = new MemoryStream(compressed))
+                using (var df = new DeflateStream(msIn, CompressionMode.Decompress))
+                using (var br = new BinaryReader(df, Encoding.UTF8))
+                {
+                    byte ver = br.ReadByte();
+                    if (ver != 2) throw new Exception("지원하지 않는 프리셋 코드 버전입니다.");
 
-            byte[] compressed = Convert.FromBase64String(trimmed.Substring(6).Trim());
+                    var p = new KeymapProfile
+                    {
+                        Name = br.ReadString(),
+                        IsBuiltIn = false,
+                        FilePath = null,
+                        Keys = new List<KeyBindItem>()
+                    };
+
+                    byte flags = br.ReadByte();
+                    p.EnableJoystick = (flags & 1) != 0;
+                    p.EnableMouseCamera = (flags & 2) != 0;
+                    p.EnableLeftClick = (flags & 4) != 0;
+                    p.EnableRightClick = (flags & 8) != 0;
+
+                    if (p.EnableJoystick)
+                    {
+                        p.JoyX = br.ReadUInt16();
+                        p.JoyY = br.ReadUInt16();
+                        p.JoyRadius = br.ReadUInt16();
+                        p.JoyUpVk = br.ReadByte();
+                        p.JoyDownVk = br.ReadByte();
+                        p.JoyLeftVk = br.ReadByte();
+                        p.JoyRightVk = br.ReadByte();
+                        p.SprintVk = br.ReadByte();
+                        p.SprintScale = br.ReadByte() / 10.0;
+                    }
+
+                    if (p.EnableMouseCamera)
+                    {
+                        p.CameraToggleVk = br.ReadByte();
+                        p.CameraX = br.ReadUInt16();
+                        p.CameraY = br.ReadUInt16();
+                        p.CameraSensX = br.ReadByte() / 20.0;
+                        p.CameraSensY = br.ReadByte() / 20.0;
+                    }
+
+                    if (p.EnableLeftClick)
+                    {
+                        p.LeftClickX = br.ReadUInt16();
+                        p.LeftClickY = br.ReadUInt16();
+                        p.LeftClickLabel = br.ReadString();
+                    }
+
+                    if (p.EnableRightClick)
+                    {
+                        p.RightClickX = br.ReadUInt16();
+                        p.RightClickY = br.ReadUInt16();
+                        p.RightClickLabel = br.ReadString();
+                    }
+
+                    int count = br.ReadByte();
+                    for (int i = 0; i < count; i++)
+                    {
+                        int vk = br.ReadByte();
+                        byte kf = br.ReadByte();
+                        int x = br.ReadUInt16();
+                        int y = br.ReadUInt16();
+                        int rad = ((kf & 16) != 0) ? br.ReadUInt16() : 1500;
+                        string lbl = ((kf & 32) != 0) ? br.ReadString() : "";
+                        p.Keys.Add(new KeyBindItem
+                        {
+                            VkCode = vk,
+                            Modifiers = kf & 0x07,
+                            IsWheelDrag = (kf & 8) != 0,
+                            WheelRadius = rad,
+                            Label = lbl,
+                            X = x,
+                            Y = y
+                        });
+                    }
+
+                    if (string.IsNullOrWhiteSpace(p.Name))
+                        p.Name = "공유받은 프로파일";
+                    return p;
+                }
+            }
+
+            if (!trimmed.StartsWith("SLKM1:", StringComparison.OrdinalIgnoreCase))
+                throw new Exception("올바른 Scrcpy Launcher 프리셋 코드(SLKM2:... 또는 SLKM1:...)가 아닙니다.");
+
+            byte[] compV1 = Convert.FromBase64String(trimmed.Substring(6).Trim());
             string json;
-            using (var msIn = new MemoryStream(compressed))
+            using (var msIn = new MemoryStream(compV1))
             using (var gz = new GZipStream(msIn, CompressionMode.Decompress))
             using (var reader = new StreamReader(gz, Encoding.UTF8))
             {

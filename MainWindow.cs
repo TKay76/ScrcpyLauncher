@@ -218,7 +218,7 @@ namespace ScrcpyLauncher
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.3.2 — Android 미러링";
+            Title = "Scrcpy Launcher v1.3.3 — Android 미러링";
             Width = 780;
             Height = 845;
             MinWidth = 720;
@@ -575,7 +575,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.3.2' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.3.3' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -1171,8 +1171,8 @@ namespace ScrcpyLauncher
             _btnReloadProfiles.Click += (s, e) => { LoadKeymapProfiles(_activeProfile != null ? _activeProfile.Name : null); AppendLog("[키 매핑] 프로파일 목록을 새로고침했습니다."); };
             _btnExportCode.Click += BtnExportCode_Click;
             _btnImportCode.Click += BtnImportCode_Click;
-            AttachGuide(_btnExportCode, "프리셋 코드 복사", "현재 프로파일을 한 줄 공유 코드(SLKM1:...)로 클립보드에 복사합니다. 커뮤니티나 친구에게 텍스트로 바로 공유할 수 있습니다.");
-            AttachGuide(_btnImportCode, "프리셋 코드 불러오기", "다른 사람이 공유한 프리셋 코드(SLKM1:...)를 붙여넣어 내 프로파일 목록에 즉시 추가합니다.");
+            AttachGuide(_btnExportCode, "프리셋 코드 복사", "현재 프로파일을 초압축 한 줄 공유 코드(SLKM2:...)로 클립보드에 복사합니다. 댓글이나 커뮤니티에 바로 공유할 수 있습니다.");
+            AttachGuide(_btnImportCode, "프리셋 코드 불러오기", "다른 사람이 공유한 프리셋 코드(SLKM2:... / SLKM1:...)를 붙여넣어 내 프로파일 목록에 즉시 추가합니다.");
             _btnKmStart.Click += BtnKmStart_Click;
             _btnKmStop.Click += (s, e) => StopKeymap();
             _btnKmEditOverlay.Click += BtnKmEditOverlay_Click;
@@ -2734,13 +2734,14 @@ namespace ScrcpyLauncher
                 if (Clipboard.ContainsText())
                 {
                     string clip = Clipboard.GetText().Trim();
-                    if (clip.StartsWith("SLKM1:", StringComparison.OrdinalIgnoreCase))
+                    if (clip.StartsWith("SLKM2:", StringComparison.OrdinalIgnoreCase) ||
+                        clip.StartsWith("SLKM1:", StringComparison.OrdinalIgnoreCase))
                         prefill = clip;
                 }
             }
             catch { }
 
-            string input = PromptTextDialog("프리셋 코드 불러오기", "공유받은 프리셋 코드(SLKM1:...)를 붙여넣으세요:", prefill);
+            string input = PromptTextDialog("프리셋 코드 불러오기", "공유받은 프리셋 코드(SLKM2:... 또는 SLKM1:...)를 붙여넣으세요:", prefill);
             if (string.IsNullOrWhiteSpace(input)) return;
 
             try
