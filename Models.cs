@@ -96,6 +96,7 @@ namespace ScrcpyLauncher
         public string RecordFolder { get; set; }
         public double OverlayOpacity { get; set; }
         public double OverlayScale { get; set; }
+        public string Language { get; set; }
 
         public LauncherSettings()
         {
@@ -124,6 +125,7 @@ namespace ScrcpyLauncher
             RecordFolder = "";
             OverlayOpacity = 1.0;
             OverlayScale = 1.0;
+            Language = "";
         }
 
         public static string GetSettingsPath()

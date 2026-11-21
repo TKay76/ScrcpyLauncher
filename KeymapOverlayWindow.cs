@@ -13,6 +13,8 @@ namespace ScrcpyLauncher
     {
         private readonly Canvas _canvas;
         private readonly Border _editToolbar;
+        private readonly TextBlock _txtEditBar;
+        private readonly Button _btnEditDone;
         private readonly Border _toastBanner;
         private readonly TextBlock _txtToast;
         private readonly DispatcherTimer _toastTimer;
@@ -91,19 +93,20 @@ namespace ScrcpyLauncher
             };
 
             var barPanel = new StackPanel { Orientation = Orientation.Horizontal };
-            barPanel.Children.Add(new TextBlock
+            _txtEditBar = new TextBlock
             {
-                Text = "키 배치 편집 모드  |  아이콘을 드래그해서 게임 버튼 위로 옮기세요",
+                Text = Loc.T("ov_edit_bar"),
                 Foreground = Brushes.White,
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 12, 0)
-            });
+            };
+            barPanel.Children.Add(_txtEditBar);
 
-            var btnDone = new Button
+            _btnEditDone = new Button
             {
-                Content = "배치 완료",
+                Content = Loc.T("ov_done"),
                 Padding = new Thickness(12, 4, 12, 4),
                 Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2563EB")),
                 Foreground = Brushes.White,
@@ -112,12 +115,12 @@ namespace ScrcpyLauncher
                 FontSize = 12,
                 FontWeight = FontWeights.Bold
             };
-            btnDone.Click += (s, e) =>
+            _btnEditDone.Click += (s, e) =>
             {
                 SetEditMode(false);
                 if (ProfileEdited != null) ProfileEdited();
             };
-            barPanel.Children.Add(btnDone);
+            barPanel.Children.Add(_btnEditDone);
             _editToolbar.Child = barPanel;
             grid.Children.Add(_editToolbar);
 
@@ -181,6 +184,13 @@ namespace ScrcpyLauncher
             _canvas.Visibility = (_isEditMode || _showHints) ? Visibility.Visible : Visibility.Collapsed;
             _toastTimer.Stop();
             _toastTimer.Start();
+        }
+
+        public void RefreshLanguage()
+        {
+            _txtEditBar.Text = Loc.T("ov_edit_bar");
+            _btnEditDone.Content = Loc.T("ov_done");
+            Redraw();
         }
 
         public void SetProfile(KeymapProfile profile)
@@ -311,7 +321,7 @@ namespace ScrcpyLauncher
                 if (double.IsNaN(rPx) || double.IsInfinity(rPx) || rPx < 36) rPx = 36;
                 var joy = CreateBadge(
                     "WASD",
-                    _profile.SprintVk > 0 ? KeyNameHelper.GetName(_profile.SprintVk) + " 질주" : "",
+                    _profile.SprintVk > 0 ? KeyNameHelper.GetName(_profile.SprintVk) + Loc.T("ov_sprint") : "",
                     rPx * 2, rPx * 2,
                     Color.FromArgb((byte)(_isEditMode ? 155 : 26), 37, 99, 235),
                     Color.FromArgb((byte)(_isEditMode ? 220 : 85), 147, 197, 253),
@@ -323,7 +333,7 @@ namespace ScrcpyLauncher
             if (_profile.EnableMouseCamera)
             {
                 var cam = CreateBadge(
-                    "시점",
+                    Loc.T("ov_cam"),
                     KeyNameHelper.GetName(_profile.CameraToggleVk),
                     56 * sc, 36 * sc,
                     Color.FromArgb((byte)(_isEditMode ? 190 : 48), 124, 58, 237),
@@ -336,7 +346,7 @@ namespace ScrcpyLauncher
             if (_profile.EnableLeftClick)
             {
                 var lc = CreateBadge(
-                    "좌클릭",
+                    Loc.T("ov_lclick"),
                     _profile.LeftClickLabel ?? "",
                     54 * sc, 38 * sc,
                     Color.FromArgb((byte)(_isEditMode ? 200 : 52), 220, 38, 38),
@@ -349,9 +359,9 @@ namespace ScrcpyLauncher
             {
                 bool rw = _profile.RightClickIsWheelDrag;
                 var rc = CreateBadge(
-                    "우클릭",
-                    rw ? (string.IsNullOrWhiteSpace(_profile.RightClickLabel) ? "휠" : _profile.RightClickLabel + "·휠") : (_profile.RightClickLabel ?? ""),
-                    (rw ? 54 : 54) * sc,
+                    Loc.T("ov_rclick"),
+                    rw ? (string.IsNullOrWhiteSpace(_profile.RightClickLabel) ? Loc.T("ov_wheel") : _profile.RightClickLabel + "·" + Loc.T("ov_wheel")) : (_profile.RightClickLabel ?? ""),
+                    54 * sc,
                     (rw ? 54 : 38) * sc,
                     rw ? Color.FromArgb((byte)(_isEditMode ? 195 : 54), 13, 148, 136) : Color.FromArgb((byte)(_isEditMode ? 200 : 52), 217, 119, 6),
                     rw ? Color.FromArgb((byte)(_isEditMode ? 225 : 105), 94, 234, 212) : Color.FromArgb((byte)(_isEditMode ? 220 : 100), 253, 224, 71),
@@ -370,7 +380,7 @@ namespace ScrcpyLauncher
                     if (keyTitle.Length > 3) baseSz = Math.Max(baseSz, (keyTitle.Length * 6.5 + 14) * sc);
                     var wheelBadge = CreateBadge(
                         keyTitle,
-                        _isEditMode ? (string.IsNullOrWhiteSpace(k.Label) ? "휠" : k.Label) : "휠",
+                        _isEditMode ? (string.IsNullOrWhiteSpace(k.Label) ? Loc.T("ov_wheel") : k.Label) : Loc.T("ov_wheel"),
                         baseSz,
                         baseSz,
                         Color.FromArgb((byte)(_isEditMode ? 190 : 54), 13, 148, 136),

@@ -121,6 +121,7 @@ namespace ScrcpyLauncher
         private Button _btnSetupGuide;
         private Button _btnShortcuts;
         private Button _btnSelectFolder;
+        private ComboBox _cmbLanguage;
 
         private ComboBox _cmbDevices;
         private Button _btnRefreshDevices;
@@ -245,7 +246,9 @@ namespace ScrcpyLauncher
             BindControls();
 
             _settings = LauncherSettings.Load();
+            Loc.SetLanguage(_settings.Language);
             ApplySettingsToUi();
+            ApplyLanguage();
 
             _controlClient = new ScrcpyControlClient(_adb);
             _hookEngine = new InputHookEngine(_controlClient);
@@ -271,7 +274,7 @@ namespace ScrcpyLauncher
             }));
             _hookEngine.PauseToggled += (paused) => Dispatcher.BeginInvoke(new Action(() =>
             {
-                string msg = paused ? "채팅 모드 ON (한글 입력 가능 · F2로 복귀)" : "키 매핑 재개 (F2)";
+                string msg = Loc.T(paused ? "toast_chat_on" : "toast_chat_off");
                 AppendLog("[키 매핑] " + msg);
                 if (_keymapOverlay != null)
                 {
@@ -285,10 +288,11 @@ namespace ScrcpyLauncher
                 {
                     _cmbKeyProfiles.SelectedIndex = idx;
                     var p = _keymapProfiles[idx];
-                    AppendLog(string.Format("[키 매핑] 프로파일 전환 (Ctrl+F{0}): {1}", idx + 1, p.Name));
+                    string toast = Loc.F("toast_profile", idx + 1, p.Name);
+                    AppendLog("[키 매핑] " + toast);
                     if (_keymapOverlay != null)
                     {
-                        _keymapOverlay.ShowToast(string.Format("프로파일 전환 (Ctrl+F{0}): {1}", idx + 1, p.Name));
+                        _keymapOverlay.ShowToast(toast);
                         SyncFpsOverlay();
                     }
                 }
@@ -572,21 +576,27 @@ namespace ScrcpyLauncher
       <ColumnDefinition Width='Auto'/>
       <ColumnDefinition Width='Auto'/>
       <ColumnDefinition Width='Auto'/>
+      <ColumnDefinition Width='Auto'/>
     </Grid.ColumnDefinitions>
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.3.5' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.4' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
     <Border x:Name='bdScrcpyStatus' Grid.Column='1' Background='#DCFCE7' CornerRadius='12' Padding='11,5' Margin='0,0,6,0' VerticalAlignment='Center'>
       <TextBlock x:Name='txtScrcpyStatus' Text='scrcpy 확인 중...' FontSize='11' FontWeight='SemiBold' Foreground='#166534'/>
     </Border>
-    <Button x:Name='btnDownloadScrcpy' Grid.Column='2' Content='scrcpy 다운로드' Style='{StaticResource SoftRedBtn}' Margin='0,0,6,0' Visibility='Collapsed'/>
-    <Button x:Name='btnSetupGuide' Grid.Column='3' Content='연결 방법 ?' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
+    <Button x:Name='btnDownloadScrcpy' Grid.Column='2' Content='scrcpy 다운로드' Style='{StaticResource SoftRedBtn}' Margin='0,0,5,0' Visibility='Collapsed'/>
+    <Button x:Name='btnSetupGuide' Grid.Column='3' Content='연결 · 문제해결 ?' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
     <Button x:Name='btnShortcuts' Grid.Column='4' Content='단축키' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-    <Button x:Name='btnSelectFolder' Grid.Column='5' Content='폴더 변경' Style='{StaticResource SubBtn}'/>
+    <Button x:Name='btnSelectFolder' Grid.Column='5' Content='폴더 변경' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
+    <ComboBox x:Name='cmbLanguage' Grid.Column='6' Width='76' Height='30' FontSize='11.5'>
+      <ComboBoxItem Content='한국어' Tag='ko'/>
+      <ComboBoxItem Content='English' Tag='en'/>
+      <ComboBoxItem Content='日本語' Tag='ja'/>
+    </ComboBox>
   </Grid>
 
   <!-- Control Mode 3-Card Selector -->
@@ -594,20 +604,20 @@ namespace ScrcpyLauncher
     <UniformGrid Columns='3'>
       <RadioButton x:Name='rbModeKeymap' GroupName='CtrlMode' Style='{StaticResource ModeCard}' Margin='0,0,6,0'>
         <StackPanel>
-          <TextBlock Text='키보드 + 마우스 (키 매핑)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
-          <TextBlock Text='WASD · 시점 회전 · 자동 연결' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
+          <TextBlock x:Name='txtModeKmTitle' Text='키보드 + 마우스 (키 매핑)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
+          <TextBlock x:Name='txtModeKmSub' Text='WASD · 시점 회전 · 자동 연결' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
         </StackPanel>
       </RadioButton>
       <RadioButton x:Name='rbModeGamepad' GroupName='CtrlMode' Style='{StaticResource ModeCard}' Margin='3,0,3,0'>
         <StackPanel>
-          <TextBlock Text='게임패드 (Xbox / PS)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
-          <TextBlock Text='UHID 컨트롤러 · 우클릭 충돌 방지' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
+          <TextBlock x:Name='txtModeGpTitle' Text='게임패드 (Xbox / PS)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
+          <TextBlock x:Name='txtModeGpSub' Text='UHID 컨트롤러 · 우클릭 충돌 방지' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
         </StackPanel>
       </RadioButton>
       <RadioButton x:Name='rbModeNormal' GroupName='CtrlMode' Style='{StaticResource ModeCard}' Margin='6,0,0,0'>
         <StackPanel>
-          <TextBlock Text='일반 미러링 (기본)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
-          <TextBlock Text='일반 터치 · 마우스 · 영상 시청' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
+          <TextBlock x:Name='txtModeNmTitle' Text='일반 미러링 (기본)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
+          <TextBlock x:Name='txtModeNmSub' Text='일반 터치 · 마우스 · 영상 시청' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
         </StackPanel>
       </RadioButton>
     </UniformGrid>
@@ -616,14 +626,14 @@ namespace ScrcpyLauncher
 
   <!-- Main Segmented Tabs -->
   <TabControl Grid.Row='2' Style='{StaticResource PillTabControl}' Margin='0,0,0,2'>
-    <TabItem Header='연결 및 영상' Style='{StaticResource PillTabItem}'>
+    <TabItem x:Name='tabConn' Header='연결 및 영상' Style='{StaticResource PillTabItem}'>
       <StackPanel>
   <!-- 1. Device Connection -->
   <Border Style='{StaticResource Card}'>
     <StackPanel>
       <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
         <Border Style='{StaticResource StepBadge}'><TextBlock Text='1' Style='{StaticResource StepNum}'/></Border>
-        <TextBlock Text='기기 연결 (USB 자동 감지 · 무선 전환 · ADB 관리)' Style='{StaticResource SectionTitle}'/>
+        <TextBlock x:Name='txtSec1Title' Text='기기 연결 (USB 자동 감지 · 무선 전환 · ADB 관리)' Style='{StaticResource SectionTitle}'/>
       </StackPanel>
       <Grid Margin='0,0,0,6'>
         <Grid.ColumnDefinitions>
@@ -640,7 +650,7 @@ namespace ScrcpyLauncher
         <Button x:Name='btnRestartAdb' Grid.Column='4' Content='ADB 재시작' Style='{StaticResource SoftAmberBtn}'/>
       </Grid>
 
-      <Expander Header='수동 무선 디버깅 페어링 / IP 직접 연결 (케이블 없이 연결할 때)' FontSize='12' Foreground='#475569' Margin='0,2,0,0'>
+      <Expander x:Name='expWireless' Header='수동 무선 디버깅 페어링 / IP 직접 연결 (케이블 없이 연결할 때)' FontSize='12' Foreground='#475569' Margin='0,2,0,0'>
         <Border Background='#F8FAFC' BorderBrush='#E2E8F0' BorderThickness='1' CornerRadius='8' Padding='10,8' Margin='0,6,0,0'>
           <StackPanel>
             <Grid Margin='0,0,0,6'>
@@ -651,9 +661,9 @@ namespace ScrcpyLauncher
                 <ColumnDefinition Width='95'/>
                 <ColumnDefinition Width='Auto'/>
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column='0' Text='① 페어링 IP:포트' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblPairAddr' Grid.Column='0' Text='① 페어링 IP:포트' Style='{StaticResource FieldLabel}'/>
               <TextBox x:Name='txtPairAddr' Grid.Column='1' Margin='0,0,10,0'/>
-              <TextBlock Grid.Column='2' Text='6자리 코드' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblPairCode' Grid.Column='2' Text='6자리 코드' Style='{StaticResource FieldLabel}'/>
               <TextBox x:Name='txtPairCode' Grid.Column='3' Margin='0,0,8,0'/>
               <Button x:Name='btnPair' Grid.Column='4' Content='페어링' Style='{StaticResource SubBtn}' Width='78'/>
             </Grid>
@@ -663,7 +673,7 @@ namespace ScrcpyLauncher
                 <ColumnDefinition Width='*'/>
                 <ColumnDefinition Width='Auto'/>
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column='0' Text='② 무선 디버깅 IP:포트' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblWifiAddr' Grid.Column='0' Text='② 무선 디버깅 IP:포트' Style='{StaticResource FieldLabel}'/>
               <TextBox x:Name='txtWifiAddr' Grid.Column='1' Margin='0,0,8,0'/>
               <Button x:Name='btnWifiConnect' Grid.Column='2' Content='무선 연결' Style='{StaticResource SoftBlueBtn}' Width='78'/>
             </Grid>
@@ -678,7 +688,7 @@ namespace ScrcpyLauncher
     <StackPanel>
       <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
         <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
-        <TextBlock Text='영상 · 성능 · 저장 설정' Style='{StaticResource SectionTitle}'/>
+        <TextBlock x:Name='txtSec2Title' Text='영상 · 성능 · 저장 설정' Style='{StaticResource SectionTitle}'/>
       </StackPanel>
       <Grid Margin='0,0,0,8'>
         <Grid.ColumnDefinitions>
@@ -693,7 +703,7 @@ namespace ScrcpyLauncher
           <ColumnDefinition Width='Auto'/>
           <ColumnDefinition Width='*'/>
         </Grid.ColumnDefinitions>
-        <TextBlock Grid.Column='0' Text='코덱' Style='{StaticResource FieldLabel}'/>
+        <TextBlock x:Name='lblCodec' Grid.Column='0' Text='코덱' Style='{StaticResource FieldLabel}'/>
         <ComboBox x:Name='cmbCodec' Grid.Column='1' Margin='0,0,10,0'>
           <ComboBoxItem Content='h264 (저지연)' Tag='h264'/>
           <ComboBoxItem Content='h265 (고화질)' Tag='h265'/>
@@ -703,7 +713,7 @@ namespace ScrcpyLauncher
         <TextBlock Grid.Column='2' Text='Mbps' Style='{StaticResource FieldLabel}'/>
         <TextBox x:Name='txtBitrate' Grid.Column='3' Margin='0,0,10,0' Text='20'/>
 
-        <TextBlock Grid.Column='4' Text='최대크기' Style='{StaticResource FieldLabel}'/>
+        <TextBlock x:Name='lblMaxSize' Grid.Column='4' Text='최대크기' Style='{StaticResource FieldLabel}'/>
         <ComboBox x:Name='cmbMaxSize' Grid.Column='5' Margin='0,0,10,0' IsEditable='True'>
           <ComboBoxItem Content='0 (제한없음)' Tag='0'/>
           <ComboBoxItem Content='1920' Tag='1920'/>
@@ -718,7 +728,7 @@ namespace ScrcpyLauncher
           <ComboBoxItem Content='120' Tag='120'/>
         </ComboBox>
 
-        <TextBlock Grid.Column='8' Text='렌더러' Style='{StaticResource FieldLabel}'/>
+        <TextBlock x:Name='lblRenderer' Grid.Column='8' Text='렌더러' Style='{StaticResource FieldLabel}'/>
         <ComboBox x:Name='cmbRenderer' Grid.Column='9'>
           <ComboBoxItem Content='자동 (D3D11)' Tag='auto'/>
           <ComboBoxItem Content='OpenGL' Tag='opengl'/>
@@ -743,7 +753,7 @@ namespace ScrcpyLauncher
           <ColumnDefinition Width='Auto'/>
           <ColumnDefinition Width='Auto'/>
         </Grid.ColumnDefinitions>
-        <TextBlock Grid.Column='0' Text='캡처 · 녹화 저장 폴더' Style='{StaticResource FieldLabel}'/>
+        <TextBlock x:Name='lblRecFolder' Grid.Column='0' Text='캡처 · 녹화 저장 폴더' Style='{StaticResource FieldLabel}'/>
         <TextBox x:Name='txtRecordFolder' Grid.Column='1' IsReadOnly='True' Background='#F8FAFC' Foreground='#475569' Margin='0,0,6,0'/>
         <Button x:Name='btnBrowseRecord' Grid.Column='2' Content='폴더 선택' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
         <Button x:Name='btnOpenRecord' Grid.Column='3' Content='폴더 열기' Style='{StaticResource SubBtn}'/>
@@ -756,7 +766,7 @@ namespace ScrcpyLauncher
     <StackPanel>
       <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
         <Border Style='{StaticResource StepBadge}'><TextBlock Text='3' Style='{StaticResource StepNum}'/></Border>
-        <TextBlock Text='가상 디스플레이 · 앱 바로 실행 (16:9 모니터 최적화)' Style='{StaticResource SectionTitle}'/>
+        <TextBlock x:Name='txtSec3Title' Text='가상 디스플레이 · 앱 바로 실행 (16:9 / 21:9 최적화)' Style='{StaticResource SectionTitle}'/>
       </StackPanel>
       <Grid Margin='0,0,0,8'>
         <Grid.ColumnDefinitions>
@@ -781,7 +791,7 @@ namespace ScrcpyLauncher
           <ColumnDefinition Width='*'/>
           <ColumnDefinition Width='Auto'/>
         </Grid.ColumnDefinitions>
-        <TextBlock Grid.Column='0' Text='실행 앱' Style='{StaticResource FieldLabel}'/>
+        <TextBlock x:Name='lblApp' Grid.Column='0' Text='실행 앱' Style='{StaticResource FieldLabel}'/>
         <Grid Grid.Column='1' Margin='0,0,6,0'>
           <TextBox x:Name='txtAppSearch'/>
           <TextBlock x:Name='txtAppSearchHint' Text='앱 이름 · 패키지 검색...' FontSize='11.5' Foreground='#94A3B8' IsHitTestVisible='False' VerticalAlignment='Center' Margin='9,0,0,0'/>
@@ -794,7 +804,7 @@ namespace ScrcpyLauncher
       </StackPanel>
     </TabItem>
 
-    <TabItem Header='키 매핑' Style='{StaticResource PillTabItem}'>
+    <TabItem x:Name='tabKeymap' Header='키 매핑' Style='{StaticResource PillTabItem}'>
       <StackPanel>
         <!-- Mode Warning Banner (shown when Gamepad or Normal mode is active) -->
         <Border x:Name='bdKmModeWarning' Background='#FFFBEB' BorderBrush='#FCD34D' BorderThickness='1' CornerRadius='8' Padding='11,7' Margin='0,0,0,8' Visibility='Collapsed'>
@@ -806,7 +816,7 @@ namespace ScrcpyLauncher
           <StackPanel>
             <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
               <Border Style='{StaticResource StepBadge}'><TextBlock Text='1' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock Text='키 매핑 프로파일 (무기별 관리 · LD플레이어 .kmp 호환)' Style='{StaticResource SectionTitle}'/>
+              <TextBlock x:Name='txtKmSec1' Text='키 매핑 프로파일 (무기별 관리 · LD플레이어 .kmp 호환)' Style='{StaticResource SectionTitle}'/>
             </StackPanel>
             <Grid Margin='0,0,0,6'>
               <Grid.ColumnDefinitions>
@@ -826,7 +836,7 @@ namespace ScrcpyLauncher
               <Button x:Name='btnDeleteProfile' Content='프로파일 삭제' Style='{StaticResource SoftRedBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,10,0'/>
               <Button x:Name='btnExportCode' Content='코드 복사' Style='{StaticResource SoftBlueBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
               <Button x:Name='btnImportCode' Content='코드 불러오기' Style='{StaticResource SoftBlueBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,8,0'/>
-              <TextBlock Text='게임 중 Ctrl+F1~F9 전환' FontSize='11' Foreground='#64748B' VerticalAlignment='Center'/>
+              <TextBlock x:Name='lblHotkeyHint' Text='게임 중 Ctrl+F1~F9 전환' FontSize='11' Foreground='#64748B' VerticalAlignment='Center'/>
             </StackPanel>
           </StackPanel>
         </Border>
@@ -836,7 +846,7 @@ namespace ScrcpyLauncher
           <StackPanel>
             <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
               <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock Text='멀티터치 조작 · 시점 회전 설정' Style='{StaticResource SectionTitle}'/>
+              <TextBlock x:Name='txtKmSec2' Text='멀티터치 조작 · 시점 회전 설정' Style='{StaticResource SectionTitle}'/>
             </StackPanel>
             <WrapPanel Margin='2,0,0,8'>
               <CheckBox x:Name='chkKmJoy' Content='WASD + Shift 질주'/>
@@ -857,16 +867,16 @@ namespace ScrcpyLauncher
                 <ColumnDefinition Width='*'/>
                 <ColumnDefinition Width='36'/>
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column='0' Text='시점 토글' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblCamToggle' Grid.Column='0' Text='시점 토글' Style='{StaticResource FieldLabel}'/>
               <ComboBox x:Name='cmbKmToggleKey' Grid.Column='1' Margin='0,0,12,0'>
                 <ComboBoxItem Content='Alt' Tag='18'/>
                 <ComboBoxItem Content='` (~)' Tag='192'/>
                 <ComboBoxItem Content='Tab' Tag='9'/>
               </ComboBox>
-              <TextBlock Grid.Column='2' Text='감도 X' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblSensX' Grid.Column='2' Text='감도 X' Style='{StaticResource FieldLabel}'/>
               <Slider x:Name='sldKmSensX' Grid.Column='3' Minimum='0.1' Maximum='3.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
               <TextBlock x:Name='txtKmSensXVal' Grid.Column='4' Text='1.00' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center' Margin='0,0,10,0'/>
-              <TextBlock Grid.Column='5' Text='감도 Y' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblSensY' Grid.Column='5' Text='감도 Y' Style='{StaticResource FieldLabel}'/>
               <Slider x:Name='sldKmSensY' Grid.Column='6' Minimum='0.1' Maximum='3.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
               <TextBlock x:Name='txtKmSensYVal' Grid.Column='7' Text='1.00' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center'/>
             </Grid>
@@ -879,10 +889,10 @@ namespace ScrcpyLauncher
                 <ColumnDefinition Width='*'/>
                 <ColumnDefinition Width='40'/>
               </Grid.ColumnDefinitions>
-              <TextBlock Grid.Column='0' Text='힌트 투명도' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblHintOp' Grid.Column='0' Text='힌트 투명도' Style='{StaticResource FieldLabel}'/>
               <Slider x:Name='sldHintOpacity' Grid.Column='1' Minimum='0.25' Maximum='1.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
               <TextBlock x:Name='txtHintOpacityVal' Grid.Column='2' Text='100%' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center' Margin='0,0,12,0'/>
-              <TextBlock Grid.Column='3' Text='힌트 크기' Style='{StaticResource FieldLabel}'/>
+              <TextBlock x:Name='lblHintSc' Grid.Column='3' Text='힌트 크기' Style='{StaticResource FieldLabel}'/>
               <Slider x:Name='sldHintScale' Grid.Column='4' Minimum='0.7' Maximum='1.5' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
               <TextBlock x:Name='txtHintScaleVal' Grid.Column='5' Text='100%' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center'/>
             </Grid>
@@ -899,7 +909,7 @@ namespace ScrcpyLauncher
           <StackPanel>
             <StackPanel Orientation='Horizontal' Margin='0,0,0,8'>
               <Border Style='{StaticResource StepBadge}'><TextBlock Text='3' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock Text='매핑된 액션 키 목록 (누름/홀드 멀티터치 지원)' Style='{StaticResource SectionTitle}'/>
+              <TextBlock x:Name='txtKmSec3' Text='매핑된 액션 키 목록 (누름/홀드 멀티터치 지원)' Style='{StaticResource SectionTitle}'/>
             </StackPanel>
             <ListBox x:Name='lstKmKeys' Height='115' BorderBrush='#CBD5E1' BorderThickness='1' FontSize='12' Margin='0,0,0,8'/>
             <Grid>
@@ -961,7 +971,7 @@ namespace ScrcpyLauncher
           <ColumnDefinition Width='Auto'/>
           <ColumnDefinition Width='Auto'/>
         </Grid.ColumnDefinitions>
-        <TextBlock Grid.Column='0' Text='실시간 로그' FontSize='11.5' FontWeight='SemiBold' Foreground='#94A3B8' VerticalAlignment='Center'/>
+        <TextBlock x:Name='lblLog' Grid.Column='0' Text='실시간 로그' FontSize='11.5' FontWeight='SemiBold' Foreground='#94A3B8' VerticalAlignment='Center'/>
         <Border x:Name='bdFpsBadge' Grid.Column='1' Background='#1E293B' BorderBrush='#334155' BorderThickness='1' CornerRadius='10' Padding='9,2' Margin='0,0,6,0' VerticalAlignment='Center' Visibility='Collapsed'>
           <TextBlock x:Name='txtFpsBadge' Text='FPS: --' FontSize='11' FontWeight='Bold' Foreground='#4ADE80'/>
         </Border>
@@ -1006,6 +1016,7 @@ namespace ScrcpyLauncher
             _btnSetupGuide = (Button)root.FindName("btnSetupGuide");
             _btnShortcuts = (Button)root.FindName("btnShortcuts");
             _btnSelectFolder = (Button)root.FindName("btnSelectFolder");
+            _cmbLanguage = (ComboBox)root.FindName("cmbLanguage");
 
             _cmbDevices = (ComboBox)root.FindName("cmbDevices");
             _btnRefreshDevices = (Button)root.FindName("btnRefreshDevices");
@@ -1132,6 +1143,15 @@ namespace ScrcpyLauncher
             _btnSetupGuide.Click += (s, e) => ShowSetupGuideDialog();
             _btnShortcuts.Click += (s, e) => ShowShortcutsDialog();
             _btnSelectFolder.Click += BtnSelectFolder_Click;
+            _cmbLanguage.SelectionChanged += (s, e) =>
+            {
+                if (_isInitializing) return;
+                string lang = GetSelectedTag(_cmbLanguage, "ko");
+                Loc.SetLanguage(lang);
+                _settings.Language = lang;
+                _settings.Save();
+                ApplyLanguage();
+            };
             _btnRefreshDevices.Click += async (s, e) => await RefreshDevicesAsync(false);
             _btnUsbToWifi.Click += BtnUsbToWifi_Click;
             _btnDisconnectWifi.Click += BtnDisconnectWifi_Click;
@@ -1340,9 +1360,130 @@ namespace ScrcpyLauncher
             };
             el.MouseLeave += (s, e) =>
             {
-                _txtGuideTitle.Text = DefaultGuideTitle;
-                _txtGuideBody.Text = DefaultGuideBody;
+                _txtGuideTitle.Text = Loc.T("guide_title");
+                _txtGuideBody.Text = Loc.T("guide_body");
             };
+        }
+
+        private void SetTextByName(FrameworkElement root, string name, string text)
+        {
+            var tb = root.FindName(name) as TextBlock;
+            if (tb != null) tb.Text = text;
+        }
+
+        private void ApplyLanguage()
+        {
+            var root = Content as FrameworkElement;
+            if (root == null) return;
+
+            Title = Loc.T("win_title");
+            _btnDownloadScrcpy.Content = Loc.T("btn_download_scrcpy");
+            _btnSetupGuide.Content = Loc.T("btn_setup_guide");
+            _btnShortcuts.Content = Loc.T("btn_shortcuts");
+            _btnSelectFolder.Content = Loc.T("btn_folder");
+            if (_updateInfo != null && _updateInfo.HasUpdate)
+                _btnUpdate.Content = Loc.F("btn_update", _updateInfo.LatestTag);
+
+            if (_adb != null)
+            {
+                if (_adb.IsValid)
+                    _txtScrcpyStatus.Text = string.IsNullOrEmpty(_detectedScrcpyVersion) ? Loc.T("scrcpy_ready") : Loc.F("scrcpy_ready_ver", _detectedScrcpyVersion);
+                else
+                    _txtScrcpyStatus.Text = Loc.T("scrcpy_missing");
+            }
+
+            SetTextByName(root, "txtModeKmTitle", Loc.T("mode_km_title"));
+            SetTextByName(root, "txtModeKmSub", Loc.T("mode_km_sub"));
+            SetTextByName(root, "txtModeGpTitle", Loc.T("mode_gp_title"));
+            SetTextByName(root, "txtModeGpSub", Loc.T("mode_gp_sub"));
+            SetTextByName(root, "txtModeNmTitle", Loc.T("mode_nm_title"));
+            SetTextByName(root, "txtModeNmSub", Loc.T("mode_nm_sub"));
+
+            var tConn = root.FindName("tabConn") as TabItem;
+            if (tConn != null) tConn.Header = Loc.T("tab_conn");
+            var tKm = root.FindName("tabKeymap") as TabItem;
+            if (tKm != null) tKm.Header = Loc.T("tab_keymap");
+
+            SetTextByName(root, "txtSec1Title", Loc.T("sec1_title"));
+            _btnRefreshDevices.Content = Loc.T("btn_refresh");
+            _btnUsbToWifi.Content = Loc.T("btn_usb_wifi");
+            _btnDisconnectWifi.Content = Loc.T("btn_wifi_disc");
+            _btnRestartAdb.Content = Loc.T("btn_adb_restart");
+            var expW = root.FindName("expWireless") as Expander;
+            if (expW != null) expW.Header = Loc.T("exp_wireless");
+            SetTextByName(root, "lblPairAddr", Loc.T("lbl_pair_addr"));
+            SetTextByName(root, "lblPairCode", Loc.T("lbl_pair_code"));
+            _btnPair.Content = Loc.T("btn_pair");
+            SetTextByName(root, "lblWifiAddr", Loc.T("lbl_wifi_addr"));
+            _btnWifiConnect.Content = Loc.T("btn_wifi_conn");
+
+            SetTextByName(root, "txtSec2Title", Loc.T("sec2_title"));
+            SetTextByName(root, "lblCodec", Loc.T("lbl_codec"));
+            SetTextByName(root, "lblMaxSize", Loc.T("lbl_maxsize"));
+            SetTextByName(root, "lblRenderer", Loc.T("lbl_renderer"));
+            _chkTurnScreenOff.Content = Loc.T("chk_screen_off");
+            _chkStayAwake.Content = Loc.T("chk_stay_awake");
+            _chkLowLatency.Content = Loc.T("chk_low_latency");
+            _chkNoAudio.Content = Loc.T("chk_no_audio");
+            _chkFullscreen.Content = Loc.T("chk_fullscreen");
+            _chkPrintFps.Content = Loc.T("chk_fps_overlay");
+            SetTextByName(root, "lblRecFolder", Loc.T("lbl_rec_folder"));
+            _btnBrowseRecord.Content = Loc.T("btn_browse");
+            _btnOpenRecord.Content = Loc.T("btn_open_folder");
+
+            SetTextByName(root, "txtSec3Title", Loc.T("sec3_title"));
+            _chkVirtualDisplay.Content = Loc.T("chk_vd");
+            _chkNoVdDecorations.Content = Loc.T("chk_no_decor");
+            SetTextByName(root, "lblApp", Loc.T("lbl_app"));
+            SetTextByName(root, "txtAppSearchHint", Loc.T("hint_app_search"));
+            _btnRefreshApps.Content = Loc.T("btn_load_apps");
+
+            _txtKmModeWarning.Text = Loc.T("km_warn");
+            SetTextByName(root, "txtKmSec1", Loc.T("km_sec1"));
+            _btnReloadProfiles.Content = Loc.T("btn_refresh");
+            _btnImportKmp.Content = Loc.T("btn_import_kmp");
+            _btnSaveProfile.Content = Loc.T("btn_save");
+            _btnSaveAsProfile.Content = Loc.T("btn_save_as");
+            _btnRenameProfile.Content = Loc.T("btn_rename");
+            _btnDeleteProfile.Content = Loc.T("btn_delete");
+            _btnExportCode.Content = Loc.T("btn_copy_code");
+            _btnImportCode.Content = Loc.T("btn_import_code");
+            SetTextByName(root, "lblHotkeyHint", Loc.T("lbl_hotkey_hint"));
+
+            SetTextByName(root, "txtKmSec2", Loc.T("km_sec2"));
+            _chkKmJoy.Content = Loc.T("chk_km_joy");
+            _chkKmCam.Content = Loc.T("chk_km_cam");
+            _chkKmLeft.Content = Loc.T("chk_km_left");
+            _chkKmRight.Content = Loc.T("chk_km_right");
+            _chkKmRightWheel.Content = Loc.T("chk_km_right_wheel");
+            _chkKmHints.Content = Loc.T("chk_km_hints");
+            SetTextByName(root, "lblCamToggle", Loc.T("lbl_cam_toggle"));
+            SetTextByName(root, "lblSensX", Loc.T("lbl_sens_x"));
+            SetTextByName(root, "lblSensY", Loc.T("lbl_sens_y"));
+            SetTextByName(root, "lblHintOp", Loc.T("lbl_hint_op"));
+            SetTextByName(root, "lblHintSc", Loc.T("lbl_hint_sc"));
+            _btnKmEditOverlay.Content = Loc.T("btn_edit_overlay");
+            _btnKmStart.Content = Loc.T("btn_km_reconnect");
+            _btnKmStop.Content = Loc.T("btn_km_pause");
+
+            SetTextByName(root, "txtKmSec3", Loc.T("km_sec3"));
+            if (_pendingNewKeyVk <= 0) _txtKmNewKey.Text = Loc.T("hint_new_key");
+            _chkKmNewWheel.Content = Loc.T("chk_new_wheel");
+            _btnKmAddKey.Content = Loc.T("btn_add_key");
+            _btnKmDelKey.Content = Loc.T("btn_del_key");
+
+            _txtGuideTitle.Text = Loc.T("guide_title");
+            _txtGuideBody.Text = Loc.T("guide_body");
+            _btnStop.Content = Loc.T("btn_stop");
+            _btnScreenshot.Content = Loc.T("btn_screenshot");
+            SetTextByName(root, "lblLog", Loc.T("lbl_log"));
+            _btnCopyCmd.Content = Loc.T("btn_copy_cmd");
+            _btnClearLog.Content = Loc.T("btn_clear_log");
+
+            UpdateModeSummary();
+            UpdateRecordButtonAppearance();
+            RefreshKeyListBox();
+            if (_keymapOverlay != null) _keymapOverlay.RefreshLanguage();
         }
 
         private void OpenUrl(string url)
@@ -1359,53 +1500,12 @@ namespace ScrcpyLauncher
 
         private void ShowSetupGuideDialog()
         {
-            string msg =
-                "[ 스마트폰 최초 연결 방법 (1회만 설정) ]\n\n" +
-                "1단계. 개발자 옵션 켜기\n" +
-                "  • 설정 → 휴대전화 정보 → 소프트웨어 정보 → '빌드번호' 7번 연속 터치\n" +
-                "    (\"개발자 모드를 켰습니다\" 메시지가 뜨면 완료)\n" +
-                "    ※ 일부 기종은 '휴대전화 정보' 화면에 빌드번호가 바로 있습니다.\n\n" +
-                "2단계. USB 디버깅 켜기 (유선 연결 · 추천)\n" +
-                "  • 설정 → 맨 아래 새로 생긴 '개발자 옵션' → 'USB 디버깅' 켜기\n" +
-                "  • USB 케이블로 PC와 연결 후, 스마트폰 화면에 뜨는\n" +
-                "    'USB 디버깅 허용' 팝업에서 [이 컴퓨터에서 항상 허용] 체크 → 허용\n\n" +
-                "3단계. 무선(Wi-Fi)으로 연결하고 싶을 때\n" +
-                "  • (쉬운 방법) USB가 꽂힌 상태에서 런처의 [유선 → 무선] 버튼 클릭\n" +
-                "    → 연결 완료 후 USB 케이블을 뽑아도 계속 사용 가능!\n" +
-                "  • (케이블 없이) 개발자 옵션 → '무선 디버깅' 켜기 → '페어링 코드로\n" +
-                "    기기 페어링'의 IP:포트와 6자리 코드를 런처 수동 페어링 칸에 입력\n\n" +
-                "※ 기기가 안 뜨거나 unauthorized/offline 표시가 뜰 때\n" +
-                "  • 데이터 전송이 되는 USB 케이블인지 확인해 주세요. (충전 전용 불가)\n" +
-                "  • 스마트폰 잠금을 푼 뒤 [ADB 재시작] 버튼을 눌러보세요.\n\n" +
-                "※ 가상 디스플레이 실행 시 게임이 바로 튕길 때\n" +
-                "  • 폰 개발자 옵션 맨 아래 '활동 크기 조정 가능(활동을 크기 조절 가능하게\n" +
-                "    강제 설정)'을 켜고 폰을 재부팅해 주세요.";
-
-            MessageBox.Show(this, msg, "스마트폰 연결 방법 안내", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, Loc.T("dlg_guide_body"), Loc.T("dlg_guide_title"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void ShowShortcutsDialog()
         {
-            string msg =
-                "[ scrcpy 실행 중 주요 단축키 ]\n\n" +
-                "• Alt + F  :  전체화면 전환\n" +
-                "• Alt + O  :  스마트폰 화면 끄기 (미러링은 유지)\n" +
-                "• Alt + Shift + O  :  스마트폰 화면 다시 켜기\n" +
-                "• Alt + I  :  실시간 FPS 표시 켜기 / 끄기\n" +
-                "• F1  :  키 매핑 화면 힌트 켜기 / 끄기\n" +
-                "• F2  :  채팅 모드 토글 (키 매핑 일시정지 · 한글 타자 가능, 한영전환: Shift+Space 또는 한/영)\n" +
-                "• Ctrl + F1 ~ F9  :  키 매핑 프로파일 즉시 전환 (무기별 전환)\n" +
-                "• Alt + H  :  홈 버튼 (HOME)\n" +
-                "• Alt + B  (또는 마우스 우클릭)  :  뒤로 가기 (BACK)\n" +
-                "• Alt + S  :  최근 앱 전환 (APP_SWITCH)\n" +
-                "• Alt + R  :  화면 회전\n" +
-                "• Alt + ↑ / ↓  :  볼륨 올리기 / 내리기\n" +
-                "• Alt + N  :  상단 알림창 내리기\n" +
-                "• Alt + G  :  창 크기를 1:1 픽셀 비율로 맞춤\n" +
-                "• Alt + W  :  창 여백(레터박스) 제거\n\n" +
-                "※ 녹화(.mp4)를 켠 경우, scrcpy 창을 닫으면 녹화가 안전하게 마무리됩니다.";
-
-            MessageBox.Show(this, msg, "scrcpy 단축키 안내", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, Loc.T("dlg_short_body"), Loc.T("dlg_short_title"), MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void OnSourceInitialized(object sender, EventArgs e)
@@ -1478,10 +1578,10 @@ namespace ScrcpyLauncher
             {
                 _updateInfo = info;
                 _updateReleaseUrl = info.ReleaseUrl;
-                _btnUpdate.Content = "업데이트 " + info.LatestTag;
-                _btnUpdate.ToolTip = "새 버전(" + info.LatestTag + ")이 출시되었습니다. 클릭하여 자동 업데이트하거나 다운로드 페이지로 이동합니다.";
+                _btnUpdate.Content = Loc.F("btn_update", info.LatestTag);
+                _btnUpdate.ToolTip = Loc.F("btn_update", info.LatestTag);
                 _btnUpdate.Visibility = Visibility.Visible;
-                AppendLog(string.Format("[업데이트] 새 버전 {0}이 출시되었습니다! 상단의 [업데이트 {0}] 버튼을 눌러 바로 업데이트할 수 있습니다.", info.LatestTag));
+                AppendLog(string.Format("[Update] New version {0} available!", info.LatestTag));
             }
         }
 
@@ -1496,13 +1596,8 @@ namespace ScrcpyLauncher
 
             var choice = MessageBox.Show(
                 this,
-                string.Format(
-                    "새 버전 ({0})으로 원클릭 자동 업데이트를 진행할까요?\n\n" +
-                    "• [예] : 지금 바로 다운로드 후 자동 교체 및 재실행\n" +
-                    "• [아니오] : GitHub 릴리즈 웹페이지 열기\n" +
-                    "• [취소] : 닫기",
-                    _updateInfo.LatestTag),
-                "Scrcpy Launcher 자동 업데이트",
+                Loc.F("upd_prompt", _updateInfo.LatestTag),
+                Loc.T("upd_title"),
                 MessageBoxButton.YesNoCancel,
                 MessageBoxImage.Question);
 
@@ -1514,21 +1609,21 @@ namespace ScrcpyLauncher
             if (choice != MessageBoxResult.Yes) return;
 
             _btnUpdate.IsEnabled = false;
-            _btnUpdate.Content = "업데이트 중...";
-            AppendLog("[업데이트] " + _updateInfo.LatestTag + " 다운로드 중...");
+            _btnUpdate.Content = Loc.T("btn_updating");
+            AppendLog("[Update] Downloading " + _updateInfo.LatestTag + "...");
 
             var res = await UpdateChecker.DownloadAndApplyUpdateAsync(_updateInfo.ExeDownloadUrl);
             if (!res.Item1)
             {
                 _btnUpdate.IsEnabled = true;
-                _btnUpdate.Content = "업데이트 " + _updateInfo.LatestTag;
-                AppendLog("[업데이트 실패] " + res.Item2);
-                var openRes = MessageBox.Show(this, "자동 업데이트에 실패했습니다:\n" + res.Item2 + "\n\nGitHub 다운로드 페이지를 여시겠습니까?", "업데이트 실패", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                _btnUpdate.Content = Loc.F("btn_update", _updateInfo.LatestTag);
+                AppendLog("[Update Failed] " + res.Item2);
+                var openRes = MessageBox.Show(this, res.Item2 + "\n\nOpen GitHub Releases?", Loc.T("upd_title"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
                 if (openRes == MessageBoxResult.Yes) OpenUrl(url);
                 return;
             }
 
-            AppendLog("[업데이트] 다운로드 완료! 프로그램을 재시작합니다...");
+            AppendLog("[Update] Restarting...");
             Close();
         }
 
@@ -1568,7 +1663,7 @@ namespace ScrcpyLauncher
                 if (!string.IsNullOrEmpty(ver)) _detectedScrcpyVersion = ver;
                 _bdScrcpyStatus.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DCFCE7"));
                 _txtScrcpyStatus.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#166534"));
-                _txtScrcpyStatus.Text = string.IsNullOrEmpty(ver) ? "scrcpy 준비됨" : "scrcpy " + ver + " 준비됨";
+                _txtScrcpyStatus.Text = string.IsNullOrEmpty(ver) ? Loc.T("scrcpy_ready") : Loc.F("scrcpy_ready_ver", ver);
                 _bdScrcpyStatus.ToolTip = _adb.ScrcpyDir;
                 _btnDownloadScrcpy.Visibility = Visibility.Collapsed;
                 AppendLog("[준비] scrcpy 경로 인식 완료: " + _adb.ScrcpyDir);
@@ -1577,7 +1672,7 @@ namespace ScrcpyLauncher
             {
                 _bdScrcpyStatus.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FEE2E2"));
                 _txtScrcpyStatus.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#991B1B"));
-                _txtScrcpyStatus.Text = "scrcpy.exe 미발견";
+                _txtScrcpyStatus.Text = Loc.T("scrcpy_missing");
                 _btnDownloadScrcpy.Visibility = Visibility.Visible;
                 AppendLog("[주의] 현재 폴더에 scrcpy.exe가 없습니다. 우측 상단 [scrcpy 다운로드]로 받은 뒤 같은 폴더에 넣거나 [폴더 변경]으로 지정해 주세요.");
             }
@@ -1964,24 +2059,24 @@ namespace ScrcpyLauncher
             string mode = GetControlMode();
             if (mode == "keymap")
             {
-                _btnStart.Content = "▶  키마 미러링 시작";
-                string pName = _activeProfile != null ? _activeProfile.Name : "없음";
-                _txtModeSummary.Text = string.Format("적용 프리셋: {0}   ·   시점 토글: {1}   ·   F1: 화면 힌트 켜기/끄기",
+                _btnStart.Content = Loc.T("btn_start_km");
+                string pName = _activeProfile != null ? _activeProfile.Name : "-";
+                _txtModeSummary.Text = Loc.F("summary_km",
                     pName, _activeProfile != null ? KeyNameHelper.GetName(_activeProfile.CameraToggleVk) : "Alt");
                 _txtModeSummary.Visibility = Visibility.Visible;
                 if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Collapsed;
             }
             else if (mode == "gamepad")
             {
-                _btnStart.Content = "▶  패드 미러링 시작";
-                _txtModeSummary.Text = "PC에 연결된 Xbox / PlayStation 컨트롤러가 물리 게임패드(-G)로 자동 인식됩니다.";
+                _btnStart.Content = Loc.T("btn_start_gp");
+                _txtModeSummary.Text = Loc.T("summary_gp");
                 _txtModeSummary.Visibility = Visibility.Visible;
                 if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Visible;
             }
             else
             {
-                _btnStart.Content = "▶  일반 미러링 시작";
-                _txtModeSummary.Text = "일반 마우스 · 키보드 조작 모드입니다. (패드 · 키 매핑 미사용)";
+                _btnStart.Content = Loc.T("btn_start_nm");
+                _txtModeSummary.Text = Loc.T("summary_nm");
                 _txtModeSummary.Visibility = Visibility.Visible;
                 if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Visible;
             }
@@ -2028,14 +2123,14 @@ namespace ScrcpyLauncher
             if (recording)
             {
                 var elapsed = DateTime.Now - _recordStartTime;
-                _btnRecordToggle.Content = string.Format("■ 녹화 중지 ({0:mm\\:ss})", elapsed);
+                _btnRecordToggle.Content = Loc.F("btn_rec_stop", elapsed.ToString(@"mm\:ss"));
                 _btnRecordToggle.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DC2626"));
                 _btnRecordToggle.Foreground = Brushes.White;
                 _btnRecordToggle.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#B91C1C"));
             }
             else
             {
-                _btnRecordToggle.Content = "● 녹화 시작";
+                _btnRecordToggle.Content = Loc.T("btn_rec_start");
                 _btnRecordToggle.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9"));
                 _btnRecordToggle.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B"));
                 _btnRecordToggle.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#CBD5E1"));
@@ -2932,12 +3027,15 @@ namespace ScrcpyLauncher
             _sldHintScale.Value = hs;
             _txtHintScaleVal.Text = Math.Round(hs * 100) + "%";
 
-            _cmbApps.Items.Add(new AppItem { Name = "(선택 안 함 — 현재 화면 그대로)", PackageName = "" });
+            SelectComboByTag(_cmbLanguage, Loc.CurrentLang, 0);
+
+            _cmbApps.Items.Add(new AppItem { Name = Loc.T("app_none"), PackageName = "" });
             _cmbApps.SelectedIndex = 0;
         }
 
         private void SaveSettingsFromUi()
         {
+            _settings.Language = GetSelectedTag(_cmbLanguage, Loc.CurrentLang);
             _settings.LastWirelessAddress = _txtWifiAddr.Text.Trim();
             _settings.Codec = GetSelectedTag(_cmbCodec, "h264");
 

@@ -653,9 +653,9 @@ namespace ScrcpyLauncher
         {
             switch (vk)
             {
-                case 4: return "휠클릭";
-                case 5: return "마우스4";
-                case 6: return "마우스5";
+                case 4: return Loc.T("key_mbtn");
+                case 5: return Loc.T("key_m4");
+                case 6: return Loc.T("key_m5");
                 case 8: return "Backspace";
                 case 9: return "Tab";
                 case 13: return "Enter";

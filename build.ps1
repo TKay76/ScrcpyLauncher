@@ -20,6 +20,7 @@ $outExe = Join-Path $dir "ScrcpyLauncher.exe"
   /r:"System.Windows.Forms.dll" `
   /r:"System.Drawing.dll" `
   "$dir\Program.cs" `
+  "$dir\Localization.cs" `
   "$dir\Models.cs" `
   "$dir\AdbService.cs" `
   "$dir\UpdateChecker.cs" `
