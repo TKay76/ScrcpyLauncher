@@ -218,7 +218,7 @@ namespace ScrcpyLauncher
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.3.1 — Android 미러링";
+            Title = "Scrcpy Launcher v1.3.2 — Android 미러링";
             Width = 780;
             Height = 845;
             MinWidth = 720;
@@ -267,6 +267,16 @@ namespace ScrcpyLauncher
                 _chkKmHints.IsChecked = next;
                 if (_keymapOverlay != null) _keymapOverlay.SetShowHints(next);
                 AppendLog(next ? "[키 매핑] 화면 키 힌트 ON (F1)" : "[키 매핑] 화면 키 힌트 OFF (F1)");
+            }));
+            _hookEngine.PauseToggled += (paused) => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                string msg = paused ? "채팅 모드 ON (한글 입력 가능 · F2로 복귀)" : "키 매핑 재개 (F2)";
+                AppendLog("[키 매핑] " + msg);
+                if (_keymapOverlay != null)
+                {
+                    _keymapOverlay.ShowToast(msg);
+                    SyncFpsOverlay();
+                }
             }));
             _hookEngine.ProfileSwitchRequested += (idx) => Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -565,7 +575,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.3.1' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.3.2' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -757,6 +767,8 @@ namespace ScrcpyLauncher
         <ComboBox x:Name='cmbVdSpec' Grid.Column='1' IsEditable='True' Margin='0,0,16,0'>
           <ComboBoxItem Content='1920x1080/280'/>
           <ComboBoxItem Content='2560x1440/373'/>
+          <ComboBoxItem Content='2560x1080/280'/>
+          <ComboBoxItem Content='3440x1440/373'/>
         </ComboBox>
         <CheckBox x:Name='chkNoVdDecorations' Grid.Column='2' Content='DeX / 시스템 UI 건너뛰기 (앱 단독 실행)' VerticalAlignment='Center' Margin='0'/>
       </Grid>
@@ -1372,6 +1384,7 @@ namespace ScrcpyLauncher
                 "• Alt + Shift + O  :  스마트폰 화면 다시 켜기\n" +
                 "• Alt + I  :  실시간 FPS 표시 켜기 / 끄기\n" +
                 "• F1  :  키 매핑 화면 힌트 켜기 / 끄기\n" +
+                "• F2  :  채팅 모드 토글 (키 매핑 일시정지 · 한글 타자 가능, 한영전환: Shift+Space 또는 한/영)\n" +
                 "• Ctrl + F1 ~ F9  :  키 매핑 프로파일 즉시 전환 (무기별 전환)\n" +
                 "• Alt + H  :  홈 버튼 (HOME)\n" +
                 "• Alt + B  (또는 마우스 우클릭)  :  뒤로 가기 (BACK)\n" +
@@ -1898,12 +1911,17 @@ namespace ScrcpyLauncher
             if (mode == "keymap")
             {
                 args.Add("--mouse=disabled");
-                args.Add("--keyboard=disabled");
+                args.Add("--keyboard=uhid");
             }
             else if (mode == "gamepad")
             {
                 args.Add("-G");
+                args.Add("--keyboard=uhid");
                 args.Add("--mouse-bind=-hsn:++++");
+            }
+            else
+            {
+                args.Add("--keyboard=uhid");
             }
 
             if (useVd)

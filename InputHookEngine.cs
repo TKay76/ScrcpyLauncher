@@ -19,6 +19,7 @@ namespace ScrcpyLauncher
         private System.Threading.Timer _tickTimer;
 
         private bool _active = false;
+        private bool _isPaused = false;
         private long _nextTouchId = 1;
 
         // Camera state (flushed smoothly on 10ms EngineTick — no SetCursorPos inside WH_MOUSE_LL!)
@@ -87,6 +88,9 @@ namespace ScrcpyLauncher
         public event Action<string> StatusMessage;
         public event Action HintToggleRequested;
         public event Action<int> ProfileSwitchRequested;
+        public event Action<bool> PauseToggled;
+
+        public bool IsPaused { get { return _isPaused; } }
 
         private const int WH_KEYBOARD_LL = 13;
         private const int WH_MOUSE_LL = 14;
@@ -190,7 +194,12 @@ namespace ScrcpyLauncher
                         return item;
                 }
             }
-            // 2. Fallback to plain key match (Modifiers == 0)
+            // If Alt is held and no explicit Alt+Key combo matched, do NOT fall back to plain keys
+            // so Windows (Alt+Tab, Alt+F4) and scrcpy (Alt+F, Alt+O, Alt+I) shortcuts work natively!
+            if ((curMods & 4) != 0)
+                return null;
+
+            // 2. Fallback to plain key match (Modifiers == 0) — works during Shift sprint too!
             for (int i = 0; i < _profile.Keys.Count; i++)
             {
                 var item = _profile.Keys[i];
@@ -239,6 +248,7 @@ namespace ScrcpyLauncher
         {
             if (!_active) return;
             _active = false;
+            _isPaused = false;
             if (_tickTimer != null)
             {
                 _tickTimer.Dispose();
@@ -517,6 +527,26 @@ namespace ScrcpyLauncher
                             return (IntPtr)1;
                         }
 
+                        // F2 (without modifiers) toggles Chat / Typing pause mode (lets Korean/English keyboard type into game!)
+                        if (vk == 113 && curMods == 0)
+                        {
+                            if (isUp)
+                            {
+                                _isPaused = !_isPaused;
+                                if (_isPaused)
+                                {
+                                    SetCameraLock(false);
+                                    ReleaseAllInputs();
+                                }
+                                if (PauseToggled != null) PauseToggled(_isPaused);
+                            }
+                            return (IntPtr)1;
+                        }
+
+                        // While paused (Chat / Typing mode), let all keyboard keys pass straight through to Android UHID keyboard!
+                        if (_isPaused)
+                            return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+
                         // F1 (without Ctrl) toggles on-screen key hints mid-game
                         if (vk == 112 && curMods == 0)
                         {
@@ -524,7 +554,8 @@ namespace ScrcpyLauncher
                             return (IntPtr)1;
                         }
 
-                        // Camera toggle key (e.g. Alt): if used as modifier in an Alt+Key combo, skip toggling on release!
+                        // Camera toggle key (e.g. Alt): pass Alt through to Windows/scrcpy so Alt+Tab and Alt+F/O/I work natively!
+                        // Toggle camera lock ONLY when Alt is tapped and released alone without pressing another key.
                         if (_profile.EnableMouseCamera && vk == NormalizeVk(_profile.CameraToggleVk))
                         {
                             if (isDown)
@@ -542,7 +573,19 @@ namespace ScrcpyLauncher
                                 _camToggleUsedAsModifier = false;
                                 if (!usedAsMod) SetCameraLock(!_cameraLocked);
                             }
-                            return (IntPtr)1;
+                            return (vk == 18) ? CallNextHookEx(_kbHook, nCode, wParam, lParam) : (IntPtr)1;
+                        }
+
+                        // Native Windows Alt+Tab: release camera lock & held touches, then pass through to OS!
+                        if (vk == 9 && (curMods & 4) != 0 && FindMatchingBind(vk, curMods) == null)
+                        {
+                            if (isDown)
+                            {
+                                SetCameraLock(false);
+                                ReleaseAllInputs();
+                                _camToggleUsedAsModifier = true;
+                            }
+                            return CallNextHookEx(_kbHook, nCode, wParam, lParam);
                         }
 
                         if (_profile.EnableJoystick)
@@ -646,6 +689,11 @@ namespace ScrcpyLauncher
                             }
                             return (IntPtr)1;
                         }
+
+                        // Any other key pressed while Alt is held (e.g. Alt+F, Alt+O, Alt+I, Alt+F4):
+                        // mark Alt as used so releasing Alt does NOT toggle camera lock, then pass through to scrcpy/Windows!
+                        if ((curMods & 4) != 0 && isDown)
+                            _camToggleUsedAsModifier = true;
                     }
                 }
             }
