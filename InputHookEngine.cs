@@ -940,12 +940,31 @@ namespace ScrcpyLauncher
                         }
                     }
 
-                    // Right-click mapped action works in BOTH camera-locked mode AND normal mode!
+                    // Right-click mapped action (normal tap/hold OR wheel-drag!) works in BOTH camera-locked AND normal modes
                     if (msg == WM_RBUTTONDOWN && _profile.EnableRightClick)
                     {
                         lock (_stateLock)
                         {
-                            if (_rightTouchId == 0)
+                            if (_profile.RightClickIsWheelDrag)
+                            {
+                                if (_wheelTouchId == 0)
+                                {
+                                    StopCameraFingerLocked();
+                                    _camAccumDx = 0;
+                                    _camAccumDy = 0;
+                                    _wheelVk = 2; // VK_RBUTTON
+                                    _wheelOriginX = _profile.RightClickX;
+                                    _wheelOriginY = _profile.RightClickY;
+                                    _wheelCurX = _profile.RightClickX;
+                                    _wheelCurY = _profile.RightClickY;
+                                    _wheelRadius = 1500;
+                                    _wheelAccumDx = 0;
+                                    _wheelAccumDy = 0;
+                                    _wheelTouchId = _nextTouchId++;
+                                    _client.InjectTouch(0, _wheelTouchId, _profile.RightClickX, _profile.RightClickY);
+                                }
+                            }
+                            else if (_rightTouchId == 0)
                             {
                                 _rightTouchId = _nextTouchId++;
                                 _client.InjectTouch(0, _rightTouchId, _profile.RightClickX, _profile.RightClickY);
@@ -957,7 +976,15 @@ namespace ScrcpyLauncher
                     {
                         lock (_stateLock)
                         {
-                            if (_rightTouchId != 0)
+                            if (_wheelTouchId != 0 && _wheelVk == 2)
+                            {
+                                _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                                _wheelTouchId = 0;
+                                _wheelVk = 0;
+                                _wheelAccumDx = 0;
+                                _wheelAccumDy = 0;
+                            }
+                            else if (_rightTouchId != 0)
                             {
                                 _client.InjectTouch(1, _rightTouchId, _profile.RightClickX, _profile.RightClickY);
                                 _rightTouchId = 0;

@@ -347,13 +347,15 @@ namespace ScrcpyLauncher
 
             if (_profile.EnableRightClick)
             {
+                bool rw = _profile.RightClickIsWheelDrag;
                 var rc = CreateBadge(
                     "우클릭",
-                    _profile.RightClickLabel ?? "",
-                    54 * sc, 38 * sc,
-                    Color.FromArgb((byte)(_isEditMode ? 200 : 52), 217, 119, 6),
-                    Color.FromArgb((byte)(_isEditMode ? 220 : 100), 253, 224, 71),
-                    false, sc);
+                    rw ? (string.IsNullOrWhiteSpace(_profile.RightClickLabel) ? "휠" : _profile.RightClickLabel + "·휠") : (_profile.RightClickLabel ?? ""),
+                    (rw ? 54 : 54) * sc,
+                    (rw ? 54 : 38) * sc,
+                    rw ? Color.FromArgb((byte)(_isEditMode ? 195 : 54), 13, 148, 136) : Color.FromArgb((byte)(_isEditMode ? 200 : 52), 217, 119, 6),
+                    rw ? Color.FromArgb((byte)(_isEditMode ? 225 : 105), 94, 234, 212) : Color.FromArgb((byte)(_isEditMode ? 220 : 100), 253, 224, 71),
+                    rw, sc);
                 PlaceAndMakeDraggable(rc, _profile.RightClickX, _profile.RightClickY, (nx, ny) => { _profile.RightClickX = nx; _profile.RightClickY = ny; });
             }
 

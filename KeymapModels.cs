@@ -83,6 +83,7 @@ namespace ScrcpyLauncher
         public string LeftClickLabel { get; set; }
 
         public bool EnableRightClick { get; set; }
+        public bool RightClickIsWheelDrag { get; set; }
         public int RightClickX { get; set; }
         public int RightClickY { get; set; }
         public string RightClickLabel { get; set; }
@@ -295,6 +296,7 @@ namespace ScrcpyLauncher
                     if (EnableMouseCamera) flags |= 2;
                     if (EnableLeftClick) flags |= 4;
                     if (EnableRightClick) flags |= 8;
+                    if (RightClickIsWheelDrag) flags |= 16;
                     bw.Write(flags);
 
                     if (EnableJoystick)
@@ -382,6 +384,7 @@ namespace ScrcpyLauncher
                     p.EnableMouseCamera = (flags & 2) != 0;
                     p.EnableLeftClick = (flags & 4) != 0;
                     p.EnableRightClick = (flags & 8) != 0;
+                    p.RightClickIsWheelDrag = (flags & 16) != 0;
 
                     if (p.EnableJoystick)
                     {

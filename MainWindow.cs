@@ -192,6 +192,7 @@ namespace ScrcpyLauncher
         private CheckBox _chkKmCam;
         private CheckBox _chkKmLeft;
         private CheckBox _chkKmRight;
+        private CheckBox _chkKmRightWheel;
         private CheckBox _chkKmHints;
         private ComboBox _cmbKmToggleKey;
         private Slider _sldKmSensX;
@@ -218,7 +219,7 @@ namespace ScrcpyLauncher
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.3.4 — Android 미러링";
+            Title = "Scrcpy Launcher v1.3.5 — Android 미러링";
             Width = 780;
             Height = 845;
             MinWidth = 720;
@@ -575,7 +576,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.3.4' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.3.5' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -837,13 +838,14 @@ namespace ScrcpyLauncher
               <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
               <TextBlock Text='멀티터치 조작 · 시점 회전 설정' Style='{StaticResource SectionTitle}'/>
             </StackPanel>
-            <UniformGrid Columns='5' Margin='2,0,0,8'>
+            <WrapPanel Margin='2,0,0,8'>
               <CheckBox x:Name='chkKmJoy' Content='WASD + Shift 질주'/>
               <CheckBox x:Name='chkKmCam' Content='마우스 시점 회전'/>
               <CheckBox x:Name='chkKmLeft' Content='좌클릭 공격'/>
               <CheckBox x:Name='chkKmRight' Content='우클릭 보조'/>
+              <CheckBox x:Name='chkKmRightWheel' Content='우클릭 휠드래그'/>
               <CheckBox x:Name='chkKmHints' Content='화면 키 힌트' IsChecked='True'/>
-            </UniformGrid>
+            </WrapPanel>
             <Grid Margin='0,0,0,10'>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width='Auto'/>
@@ -1074,6 +1076,7 @@ namespace ScrcpyLauncher
             _chkKmCam = (CheckBox)root.FindName("chkKmCam");
             _chkKmLeft = (CheckBox)root.FindName("chkKmLeft");
             _chkKmRight = (CheckBox)root.FindName("chkKmRight");
+            _chkKmRightWheel = (CheckBox)root.FindName("chkKmRightWheel");
             _chkKmHints = (CheckBox)root.FindName("chkKmHints");
             _cmbKmToggleKey = (ComboBox)root.FindName("cmbKmToggleKey");
             _sldKmSensX = (Slider)root.FindName("sldKmSensX");
@@ -1179,7 +1182,8 @@ namespace ScrcpyLauncher
             _btnKmAddKey.Click += BtnKmAddKey_Click;
             _btnKmDelKey.Click += BtnKmDelKey_Click;
             AttachGuide(_chkKmNewWheel, "휠 드래그 키 (부위 조준 · 아이템/탄환 휠)", "체크 후 추가하면 키를 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다. (예: Tab 부위 조준, G 아이템/탄환 휠)");
-            AttachGuide(_chkKmRight, "우클릭 보조", "시점 고정 ON/OFF 모두에서 마우스 우클릭을 지정된 버튼(특수 공격·회피 등)으로 사용합니다. 일반 모드에서 좌클릭은 화면 터치로 그대로 유지됩니다.");
+            AttachGuide(_chkKmRight, "우클릭 보조", "시점 고정 ON/OFF 모두에서 마우스 우클릭을 지정된 버튼(특수 공격·회피·탄 선택 등)으로 사용합니다. 일반 모드에서 좌클릭은 화면 터치로 그대로 유지됩니다.");
+            AttachGuide(_chkKmRightWheel, "우클릭 휠 드래그 (헤보 탄 선택 등)", "체크하면 마우스 우클릭을 꾹 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다.");
 
             _txtKmNewKey.PreviewKeyDown += (s, e) =>
             {
@@ -1244,6 +1248,8 @@ namespace ScrcpyLauncher
             _chkKmLeft.Unchecked += (s, e) => onKmChanged();
             _chkKmRight.Checked += (s, e) => onKmChanged();
             _chkKmRight.Unchecked += (s, e) => onKmChanged();
+            _chkKmRightWheel.Checked += (s, e) => onKmChanged();
+            _chkKmRightWheel.Unchecked += (s, e) => onKmChanged();
             _chkKmHints.Checked += (s, e) => { if (_keymapOverlay != null) _keymapOverlay.SetShowHints(true); SyncFpsOverlay(); };
             _chkKmHints.Unchecked += (s, e) => { if (_keymapOverlay != null) _keymapOverlay.SetShowHints(false); };
             _cmbKmToggleKey.SelectionChanged += (s, e) => onKmChanged();
@@ -1370,7 +1376,10 @@ namespace ScrcpyLauncher
                 "    기기 페어링'의 IP:포트와 6자리 코드를 런처 수동 페어링 칸에 입력\n\n" +
                 "※ 기기가 안 뜨거나 unauthorized/offline 표시가 뜰 때\n" +
                 "  • 데이터 전송이 되는 USB 케이블인지 확인해 주세요. (충전 전용 불가)\n" +
-                "  • 스마트폰 잠금을 푼 뒤 [ADB 재시작] 버튼을 눌러보세요.";
+                "  • 스마트폰 잠금을 푼 뒤 [ADB 재시작] 버튼을 눌러보세요.\n\n" +
+                "※ 가상 디스플레이 실행 시 게임이 바로 튕길 때\n" +
+                "  • 폰 개발자 옵션 맨 아래 '활동 크기 조정 가능(활동을 크기 조절 가능하게\n" +
+                "    강제 설정)'을 켜고 폰을 재부팅해 주세요.";
 
             MessageBox.Show(this, msg, "스마트폰 연결 방법 안내", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -2528,6 +2537,8 @@ namespace ScrcpyLauncher
                 _chkKmCam.IsChecked = _activeProfile.EnableMouseCamera;
                 _chkKmLeft.IsChecked = _activeProfile.EnableLeftClick;
                 _chkKmRight.IsChecked = _activeProfile.EnableRightClick;
+                _chkKmRightWheel.IsChecked = _activeProfile.RightClickIsWheelDrag;
+                _chkKmRightWheel.IsEnabled = _activeProfile.EnableRightClick;
                 SelectComboByTag(_cmbKmToggleKey, _activeProfile.CameraToggleVk.ToString(), 0);
                 double sx = Math.Max(0.1, Math.Min(3.0, _activeProfile.CameraSensX > 0 ? _activeProfile.CameraSensX : 1.0));
                 double sy = Math.Max(0.1, Math.Min(3.0, _activeProfile.CameraSensY > 0 ? _activeProfile.CameraSensY : 1.0));
@@ -2550,6 +2561,8 @@ namespace ScrcpyLauncher
             _activeProfile.EnableMouseCamera = _chkKmCam.IsChecked == true;
             _activeProfile.EnableLeftClick = _chkKmLeft.IsChecked == true;
             _activeProfile.EnableRightClick = _chkKmRight.IsChecked == true;
+            _activeProfile.RightClickIsWheelDrag = _chkKmRightWheel.IsChecked == true;
+            _chkKmRightWheel.IsEnabled = _activeProfile.EnableRightClick;
 
             int tk;
             if (int.TryParse(GetSelectedTag(_cmbKmToggleKey, "18"), out tk))
