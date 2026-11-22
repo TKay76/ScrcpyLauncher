@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $wpf = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\WPF"
+$winmd = "C:\Windows\System32\WinMetadata"
 $outExe = Join-Path $dir "ScrcpyLauncher.exe"
 
 & $csc `
@@ -19,6 +20,14 @@ $outExe = Join-Path $dir "ScrcpyLauncher.exe"
   /r:"System.Web.Extensions.dll" `
   /r:"System.Windows.Forms.dll" `
   /r:"System.Drawing.dll" `
+  /r:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.Runtime.dll" `
+  /r:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.Runtime.WindowsRuntime.dll" `
+  /r:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.Runtime.InteropServices.WindowsRuntime.dll" `
+  /r:"$winmd\Windows.Foundation.winmd" `
+  /r:"$winmd\Windows.Globalization.winmd" `
+  /r:"$winmd\Windows.Graphics.winmd" `
+  /r:"$winmd\Windows.Media.winmd" `
+  /r:"$winmd\Windows.Storage.winmd" `
   "$dir\Program.cs" `
   "$dir\Localization.cs" `
   "$dir\Models.cs" `
@@ -29,6 +38,7 @@ $outExe = Join-Path $dir "ScrcpyLauncher.exe"
   "$dir\ScrcpyControlClient.cs" `
   "$dir\InputHookEngine.cs" `
   "$dir\KeymapOverlayWindow.cs" `
+  "$dir\QuestOcrService.cs" `
   "$dir\MainWindow.cs"
 
 if ($LASTEXITCODE -ne 0) {

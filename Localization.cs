@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "Scrcpy Launcher v1.4 — Android 미러링", "Scrcpy Launcher v1.4 — Android Mirroring", "Scrcpy Launcher v1.4 — Android ミラーリング");
+            A("win_title", "Scrcpy Launcher v1.5 — Android 미러링", "Scrcpy Launcher v1.5 — Android Mirroring", "Scrcpy Launcher v1.5 — Android ミラーリング");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -93,6 +93,7 @@ namespace ScrcpyLauncher
             // Tabs
             A("tab_conn", "연결 및 영상", "Connection & Video", "接続・映像");
             A("tab_keymap", "키 매핑", "Key Mapping", "キーマッピング");
+            A("tab_quest", "퀘스트 플래너", "Quest Planner", "クエスト整理");
 
             // Section 1: Device
             A("sec1_title", "기기 연결 (USB 자동 감지 · 무선 전환 · ADB 관리)", "Device Connection (USB Auto · Wireless · ADB)", "デバイス接続 (USB自動検出 · 無線切替 · ADB)");
@@ -266,6 +267,7 @@ namespace ScrcpyLauncher
                 "• Alt  :  시점 회전 모드 ON / OFF (커서 잠금/해제)\n" +
                 "• F1  :  키 매핑 화면 힌트 켜기 / 끄기\n" +
                 "• F2  :  채팅 모드 토글 (키 매핑 일시정지 · 한글 타자 가능)\n" +
+                "• F8  :  현재 퀘스트 화면 수집 (퀘스트 플래너 · 전 모드 지원)\n" +
                 "• Ctrl + F1 ~ F9  :  무기별 프로파일 즉시 전환\n" +
                 "• Alt + F  :  전체화면 전환\n" +
                 "• Alt + O  /  Alt + Shift + O  :  폰 화면 끄기 / 켜기\n" +

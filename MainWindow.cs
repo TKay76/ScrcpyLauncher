@@ -24,6 +24,8 @@ namespace ScrcpyLauncher
         private readonly DispatcherTimer _deviceTimer;
         private readonly DispatcherTimer _recordTimer;
         private readonly DispatcherTimer _overlayTimer;
+        private readonly List<QuestEntry> _scannedQuests = new List<QuestEntry>();
+        private bool _isQuestScanningNow = false;
         private FpsOverlayWindow _fpsOverlay;
         private KeymapOverlayWindow _keymapOverlay;
         private CursorHiderWindow _cursorHider;
@@ -96,7 +98,17 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint GetRawInputData(IntPtr hRawInput, uint uiCommand, byte[] pData, ref uint pcbSize, uint cbSizeHeader);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
         private const int WM_INPUT = 0x00FF;
+        private const int WM_HOTKEY = 0x0312;
+        private const int HOTKEY_QUEST_SCAN = 9001;
+        private const uint VK_F8 = 0x77;
+        private bool _questHotKeyRegistered = false;
         private const uint RID_INPUT = 0x10000003;
         private const uint RIDEV_INPUTSINK = 0x00000100;
         private const uint RIM_TYPEMOUSE = 0;
@@ -213,6 +225,15 @@ namespace ScrcpyLauncher
         private CheckBox _chkKmNewWheel;
         private Button _btnKmAddKey;
         private Button _btnKmDelKey;
+
+        // Quest Planner Tab Controls
+        private Button _btnQuestScanOne;
+        private Button _btnQuestUndo;
+        private Button _btnQuestSpeciesGuide;
+        private Button _btnQuestClear;
+        private TextBlock _txtQuestCount;
+        private TextBlock _txtQuestBanner;
+        private StackPanel _pnlQuestPlans;
 
         private const string ScrcpyReleasesUrl = "https://github.com/Genymobile/scrcpy/releases";
         private const string DefaultGuideTitle = "옵션 가이드";
@@ -581,7 +602,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.4' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.5' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -930,6 +951,55 @@ namespace ScrcpyLauncher
         </Border>
       </StackPanel>
     </TabItem>
+
+    <TabItem x:Name='tabQuest' Header='퀘스트 플래너' Style='{StaticResource PillTabItem}'>
+      <StackPanel>
+        <!-- Quest Scan Controls & Top Recommendation -->
+        <Border Style='{StaticResource Card}'>
+          <StackPanel>
+            <StackPanel Orientation='Horizontal' Margin='0,0,0,8'>
+              <Border Style='{StaticResource StepBadge}'><TextBlock Text='1' Style='{StaticResource StepNum}'/></Border>
+              <TextBlock Text='퀘스트 수집 (게임에서 퀘스트 클릭 후 [F8] 눌러 추가 · 둥지 먼저 비우기 → 필드 중복 클리어)' Style='{StaticResource SectionTitle}'/>
+            </StackPanel>
+            <Grid Margin='0,0,0,8'>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='*'/>
+                <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='Auto'/>
+              </Grid.ColumnDefinitions>
+              <Button x:Name='btnQuestScanOne' Grid.Column='0' Content='+ 현재 퀘스트 수집 (F8)' Style='{StaticResource SoftBlueBtn}' Margin='0,0,6,0'/>
+              <Button x:Name='btnQuestUndo' Grid.Column='1' Content='↩ 방금 1건 취소' Style='{StaticResource SubBtn}' Margin='0,0,6,0'/>
+              <Button x:Name='btnQuestSpeciesGuide' Grid.Column='2' Content='종족 도감 ?' Style='{StaticResource SubBtn}' Margin='0,0,6,0'/>
+              <Border Grid.Column='4' Background='#EFF6FF' BorderBrush='#BFDBFE' BorderThickness='1' CornerRadius='6' Padding='10,4' Margin='0,0,6,0' VerticalAlignment='Center'>
+                <TextBlock x:Name='txtQuestCount' Text='보유: 0 / 10' FontSize='11.5' FontWeight='Bold' Foreground='#1D4ED8'/>
+              </Border>
+              <Button x:Name='btnQuestClear' Grid.Column='5' Content='전체 비우기' Style='{StaticResource SoftRedBtn}'/>
+            </Grid>
+            <Border Background='#F0FDF4' BorderBrush='#86EFAC' BorderThickness='1' CornerRadius='7' Padding='10,6'>
+              <TextBlock x:Name='txtQuestBanner' Text='게임에서 퀘스트를 클릭한 뒤 [F8]을 눌러 수집하세요. (최대 10개)' FontSize='12' FontWeight='SemiBold' Foreground='#166534' TextWrapping='Wrap'/>
+            </Border>
+          </StackPanel>
+        </Border>
+
+        <!-- Simultaneous Clear Plans (with 1-click group & individual clear buttons) -->
+        <Border Style='{StaticResource Card}'>
+          <StackPanel>
+            <StackPanel Orientation='Horizontal' Margin='0,0,0,8'>
+              <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
+              <TextBlock Text='동시 클리어 추천 조합 (클리어한 조합이나 개별 항목의 [✓]를 눌러 비우고 새 퀘스트만 추가하세요)' Style='{StaticResource SectionTitle}'/>
+            </StackPanel>
+            <ScrollViewer Height='325' VerticalScrollBarVisibility='Auto'>
+              <StackPanel x:Name='pnlQuestPlans'>
+                <TextBlock Text='아직 수집된 퀘스트가 없습니다. 게임에서 퀘스트를 선택한 뒤 [F8]을 눌러 수집하세요.' FontSize='12' Foreground='#64748B' TextWrapping='Wrap' Margin='4,12'/>
+              </StackPanel>
+            </ScrollViewer>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </TabItem>
   </TabControl>
 
   <!-- Dynamic Option Guide -->
@@ -1108,6 +1178,15 @@ namespace ScrcpyLauncher
             _btnKmAddKey = (Button)root.FindName("btnKmAddKey");
             _btnKmDelKey = (Button)root.FindName("btnKmDelKey");
 
+            // Quest Planner controls
+            _btnQuestScanOne = (Button)root.FindName("btnQuestScanOne");
+            _btnQuestUndo = (Button)root.FindName("btnQuestUndo");
+            _btnQuestSpeciesGuide = (Button)root.FindName("btnQuestSpeciesGuide");
+            _btnQuestClear = (Button)root.FindName("btnQuestClear");
+            _txtQuestCount = (TextBlock)root.FindName("txtQuestCount");
+            _txtQuestBanner = (TextBlock)root.FindName("txtQuestBanner");
+            _pnlQuestPlans = (StackPanel)root.FindName("pnlQuestPlans");
+
             // Interactive guides + tooltips (generic phrasing for public distribution)
             AttachGuide(_btnDownloadScrcpy, "scrcpy 공식 다운로드", "공식 GitHub Releases 페이지에서 최신 Windows용 scrcpy zip 파일을 받아 압축을 푼 뒤, 이 실행 파일을 같은 폴더에 넣어주세요.");
             AttachGuide(_btnSetupGuide, "스마트폰 최초 연결 방법", "개발자 옵션 활성화, USB 디버깅 켜기, 무선 디버깅 연결 방법을 처음 사용하는 분도 따라할 수 있게 단계별로 안내합니다.");
@@ -1201,6 +1280,26 @@ namespace ScrcpyLauncher
             _btnKmEditOverlay.Click += BtnKmEditOverlay_Click;
             _btnKmAddKey.Click += BtnKmAddKey_Click;
             _btnKmDelKey.Click += BtnKmDelKey_Click;
+
+            _btnQuestScanOne.Click += async (s, e) => await ScanCurrentQuestAsync(true);
+            _btnQuestUndo.Click += (s, e) =>
+            {
+                if (_scannedQuests.Count == 0) return;
+                var last = _scannedQuests[_scannedQuests.Count - 1];
+                _scannedQuests.RemoveAt(_scannedQuests.Count - 1);
+                RefreshQuestPlannerUi();
+                AppendLog("[퀘스트] 마지막 수집 취소: " + last.ObjectiveText);
+            };
+            _btnQuestSpeciesGuide.Click += (s, e) =>
+            {
+                MessageBox.Show(this, QuestOcrService.GetSpeciesGuideText(), "종족별 몬스터 & 약점 도감", MessageBoxButton.OK, MessageBoxImage.Information);
+            };
+            _btnQuestClear.Click += (s, e) =>
+            {
+                _scannedQuests.Clear();
+                RefreshQuestPlannerUi();
+                AppendLog("[퀘스트] 보유 퀘스트 목록을 모두 비웠습니다.");
+            };
             AttachGuide(_chkKmNewWheel, "휠 드래그 키 (부위 조준 · 아이템/탄환 휠)", "체크 후 추가하면 키를 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다. (예: Tab 부위 조준, G 아이템/탄환 휠)");
             AttachGuide(_chkKmRight, "우클릭 보조", "시점 고정 ON/OFF 모두에서 마우스 우클릭을 지정된 버튼(특수 공격·회피·탄 선택 등)으로 사용합니다. 일반 모드에서 좌클릭은 화면 터치로 그대로 유지됩니다.");
             AttachGuide(_chkKmRightWheel, "우클릭 휠 드래그 (헤보 탄 선택 등)", "체크하면 마우스 우클릭을 꾹 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다.");
@@ -1403,6 +1502,8 @@ namespace ScrcpyLauncher
             if (tConn != null) tConn.Header = Loc.T("tab_conn");
             var tKm = root.FindName("tabKeymap") as TabItem;
             if (tKm != null) tKm.Header = Loc.T("tab_keymap");
+            var tQuest = root.FindName("tabQuest") as TabItem;
+            if (tQuest != null) tQuest.Header = Loc.T("tab_quest");
 
             SetTextByName(root, "txtSec1Title", Loc.T("sec1_title"));
             _btnRefreshDevices.Content = Loc.T("btn_refresh");
@@ -1535,6 +1636,12 @@ namespace ScrcpyLauncher
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
+            if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_QUEST_SCAN)
+            {
+                handled = true;
+                var _ = ScanCurrentQuestAsync(true);
+                return IntPtr.Zero;
+            }
             if (msg == WM_INPUT && _hookEngine != null && _hookEngine.IsActive && (_hookEngine.IsCameraLocked || _hookEngine.IsWheelDragging))
             {
                 uint headerSize = (uint)Marshal.SizeOf(typeof(RAWINPUTHEADER));
@@ -1627,8 +1734,28 @@ namespace ScrcpyLauncher
             Close();
         }
 
+        private void SetQuestHotKeyActive(bool active)
+        {
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+                if (active && !_questHotKeyRegistered)
+                {
+                    _questHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_QUEST_SCAN, 0, VK_F8);
+                }
+                else if (!active && _questHotKeyRegistered)
+                {
+                    UnregisterHotKey(hwnd, HOTKEY_QUEST_SCAN);
+                    _questHotKeyRegistered = false;
+                }
+            }
+            catch { }
+        }
+
         private void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            SetQuestHotKeyActive(false);
             _deviceTimer.Stop();
             _recordTimer.Stop();
             _overlayTimer.Stop();
@@ -2199,6 +2326,7 @@ namespace ScrcpyLauncher
                     {
                         AppendLog("[종료] scrcpy가 종료되었습니다.");
                         _bdFpsBadge.Visibility = Visibility.Collapsed;
+                        SetQuestHotKeyActive(false);
                         StopKeymap();
                         HideFpsOverlay();
                         _activeDisplayId = "";
@@ -2212,6 +2340,7 @@ namespace ScrcpyLauncher
                 _scrcpyProcess.Start();
                 _scrcpyProcess.BeginOutputReadLine();
                 _scrcpyProcess.BeginErrorReadLine();
+                SetQuestHotKeyActive(true);
                 if (_chkPrintFps.IsChecked == true)
                     EnsureFpsOverlay();
                 _overlayTimer.Start();
@@ -2575,7 +2704,7 @@ namespace ScrcpyLauncher
                     _hookEngine.CheckFocusSafety();
                 }
 
-                if (_keymapOverlay != null && (_keymapOverlay.IsEditMode || (_hookEngine.IsActive && (_chkKmHints.IsChecked == true || _keymapOverlay.HasActiveToast))))
+                if (_keymapOverlay != null && (_keymapOverlay.IsEditMode || _keymapOverlay.HasActiveToast || (_hookEngine.IsActive && _chkKmHints.IsChecked == true)))
                 {
                     _keymapOverlay.SyncToTargetWindow(targetHwnd, launcherHwnd, vidW, vidH);
                 }
@@ -2954,6 +3083,295 @@ namespace ScrcpyLauncher
             _activeProfile.Keys.Remove(sel);
             RefreshKeyListBox();
             if (_keymapOverlay != null) _keymapOverlay.Redraw();
+        }
+
+        private async Task ScanCurrentQuestAsync(bool forceAdd)
+        {
+            if (_isQuestScanningNow) return;
+            if (_scrcpyProcess == null || _scrcpyProcess.HasExited)
+            {
+                AppendLog("[퀘스트] 미러링이 실행 중일 때만 스캔할 수 있습니다.");
+                return;
+            }
+
+            _isQuestScanningNow = true;
+            try
+            {
+                _scrcpyProcess.Refresh();
+                IntPtr hwnd = _scrcpyProcess.MainWindowHandle;
+                int vidW = _activeDisplayWidth > 0 ? _activeDisplayWidth : (_controlClient != null ? _controlClient.ScreenWidth : 0);
+                int vidH = _activeDisplayHeight > 0 ? _activeDisplayHeight : (_controlClient != null ? _controlClient.ScreenHeight : 0);
+
+                var res = await QuestOcrService.ScanQuestDetailFromWindowAsync(hwnd, vidW, vidH);
+                if (res.Item1 == null)
+                {
+                    AppendLog("[퀘스트] " + res.Item2);
+                    return;
+                }
+
+                QuestEntry entry = res.Item1;
+                _scannedQuests.Add(entry);
+                QuestOcrService.AppendToQuestLog(entry);
+                RefreshQuestPlannerUi();
+
+                string spPart = string.IsNullOrEmpty(entry.Species) ? "" : (" · " + entry.Species);
+                string actPart = (string.IsNullOrEmpty(entry.ActionType) || entry.ActionType == "기타") ? "" : (" " + entry.ActionType);
+                string wepPart = string.IsNullOrEmpty(entry.WeaponType) ? "" : (" (" + entry.WeaponType + ")");
+                string note = string.Format("[{0}/10] {1}{2}{3}{4}",
+                    _scannedQuests.Count, entry.Region, spPart, actPart, wepPart);
+                if (_scannedQuests.Count >= 10)
+                {
+                    var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests);
+                    note = string.Format("[10/10 완료] {0}", QuestOcrService.GetTopRecommendation(plans, _scannedQuests.Count));
+                }
+
+                AppendLog("[퀘스트] " + note);
+                if (_keymapOverlay == null)
+                {
+                    _keymapOverlay = new KeymapOverlayWindow();
+                    _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
+                    _keymapOverlay.SetShowHints(false);
+                }
+                _keymapOverlay.ShowToast(note);
+                if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
+                SyncFpsOverlay();
+            }
+            finally
+            {
+                _isQuestScanningNow = false;
+            }
+        }
+
+        private void RefreshQuestPlannerUi()
+        {
+            _txtQuestCount.Text = string.Format("보유: {0} / 10", _scannedQuests.Count);
+
+            var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests);
+            _txtQuestBanner.Text = QuestOcrService.GetTopRecommendation(plans, _scannedQuests.Count);
+
+            _pnlQuestPlans.Children.Clear();
+            if (_scannedQuests.Count == 0)
+            {
+                _pnlQuestPlans.Children.Add(new TextBlock
+                {
+                    Text = "아직 수집된 퀘스트가 없습니다. 게임에서 퀘스트를 선택한 뒤 [F8]을 눌러 수집하세요.",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#64748B")),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(4, 12, 4, 12)
+                });
+                return;
+            }
+
+            foreach (var plan in plans)
+            {
+                var capturedPlan = plan;
+                bool isNest = plan.IsNestGroup;
+                bool isMulti = plan.Count >= 2;
+                string accentHex = isNest ? "#7C3AED" : (isMulti ? "#2563EB" : "#94A3B8");
+                string borderHex = isNest ? "#DDD6FE" : (isMulti ? "#BFDBFE" : "#E2E8F0");
+                string bgHex = isNest ? "#FDFBFF" : (isMulti ? "#FFFFFF" : "#F8FAFC");
+
+                var card = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bgHex)),
+                    BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(borderHex)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(9),
+                    Margin = new Thickness(0, 0, 0, 8),
+                    ClipToBounds = true
+                };
+
+                var outerGrid = new Grid();
+                outerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+                outerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                var accentBar = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(accentHex)),
+                    CornerRadius = new CornerRadius(8, 0, 0, 8)
+                };
+                Grid.SetColumn(accentBar, 0);
+                outerGrid.Children.Add(accentBar);
+
+                var sp = new StackPanel { Margin = new Thickness(11, 8, 10, 8) };
+
+                // Header row: [Region - Species] + Action pill + Weapon pill + Count pill + [✓ 완료]
+                var hdrGrid = new Grid();
+                hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                hdrGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var tagWrap = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+                tagWrap.Children.Add(new TextBlock
+                {
+                    Text = plan.RegionTitle + " · " + plan.SpeciesTitle,
+                    FontSize = 13,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isNest ? "#5B21B6" : (isMulti ? "#0F172A" : "#334155"))),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 7, 0)
+                });
+
+                // Action Pill (★포획 / ★토벌 / ★사냥)
+                string actBg = plan.ActionBadge == "★포획" ? "#FEF3C7" : (plan.ActionBadge == "★토벌" ? "#FEE2E2" : "#DBEAFE");
+                string actFg = plan.ActionBadge == "★포획" ? "#B45309" : (plan.ActionBadge == "★토벌" ? "#B91C1C" : "#1D4ED8");
+                tagWrap.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(actBg)),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(6, 1.5, 6, 1.5),
+                    Margin = new Thickness(0, 0, 5, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = plan.ActionBadge,
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(actFg))
+                    }
+                });
+
+                // Weapon Pill (원거리 무기 / 근거리 무기)
+                if (!string.IsNullOrEmpty(plan.WeaponBadge))
+                {
+                    tagWrap.Children.Add(new Border
+                    {
+                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#CCFBF1")),
+                        CornerRadius = new CornerRadius(5),
+                        Padding = new Thickness(6, 1.5, 6, 1.5),
+                        Margin = new Thickness(0, 0, 5, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = new TextBlock
+                        {
+                            Text = plan.WeaponBadge,
+                            FontSize = 10.5,
+                            FontWeight = FontWeights.Bold,
+                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0F766E"))
+                        }
+                    });
+                }
+
+                // Count Pill
+                tagWrap.Children.Add(new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isMulti ? "#2563EB" : "#E2E8F0")),
+                    CornerRadius = new CornerRadius(10),
+                    Padding = new Thickness(7, 1.5, 7, 1.5),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = isMulti ? (plan.Count + "개 동시") : "1개",
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.Bold,
+                        Foreground = isMulti ? Brushes.White : new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569"))
+                    }
+                });
+
+                Grid.SetColumn(tagWrap, 0);
+                hdrGrid.Children.Add(tagWrap);
+
+                var btnDoneGroup = new Button
+                {
+                    Content = "✓ 완료",
+                    Height = 24,
+                    Padding = new Thickness(10, 1, 10, 1),
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(isNest ? "#7C3AED" : (isMulti ? "#2563EB" : "#64748B"))),
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(0),
+                    Cursor = Cursors.Hand,
+                    Margin = new Thickness(8, 0, 0, 0)
+                };
+                btnDoneGroup.Click += (s, e) =>
+                {
+                    foreach (var q in capturedPlan.Quests)
+                        _scannedQuests.Remove(q);
+                    RefreshQuestPlannerUi();
+                    AppendLog(string.Format("[퀘스트] {0} 완료 처리! (남은 퀘스트: {1}/10)", capturedPlan.Header, _scannedQuests.Count));
+                };
+                Grid.SetColumn(btnDoneGroup, 1);
+                hdrGrid.Children.Add(btnDoneGroup);
+                sp.Children.Add(hdrGrid);
+
+                // Target monsters pill strip (omitted for pure Radiant or Nest)
+                if (!string.IsNullOrEmpty(plan.TargetMonsters))
+                {
+                    sp.Children.Add(new Border
+                    {
+                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                        CornerRadius = new CornerRadius(5),
+                        Padding = new Thickness(8, 3.5, 8, 3.5),
+                        Margin = new Thickness(0, 6, 0, 4),
+                        Child = new TextBlock
+                        {
+                            Text = plan.TargetMonsters,
+                            FontSize = 11,
+                            Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#475569")),
+                            TextWrapping = TextWrapping.Wrap
+                        }
+                    });
+                }
+
+                // Thin divider
+                sp.Children.Add(new Border
+                {
+                    Height = 1,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F1F5F9")),
+                    Margin = new Thickness(0, 4, 0, 4)
+                });
+
+                // Individual quest rows (clean objective text without [아무 필드] prefix!)
+                foreach (var q in plan.Quests)
+                {
+                    var capturedQ = q;
+                    var qRow = new Grid { Margin = new Thickness(2, 2, 0, 2) };
+                    qRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    qRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                    string prog = string.IsNullOrEmpty(q.Progress) ? "" : (" (" + q.Progress + ")");
+                    var tbQ = new TextBlock
+                    {
+                        Text = "• " + q.ObjectiveText + prog,
+                        FontSize = 11.5,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B")),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap
+                    };
+                    Grid.SetColumn(tbQ, 0);
+                    qRow.Children.Add(tbQ);
+
+                    var btnDoneOne = new Button
+                    {
+                        Content = "✓",
+                        Width = 22,
+                        Height = 20,
+                        Padding = new Thickness(0),
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.Bold,
+                        Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E2E8F0")),
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#334155")),
+                        BorderThickness = new Thickness(0),
+                        Cursor = Cursors.Hand,
+                        Margin = new Thickness(6, 0, 0, 0),
+                        ToolTip = "이 퀘스트만 완료 처리"
+                    };
+                    btnDoneOne.Click += (s, e) =>
+                    {
+                        _scannedQuests.Remove(capturedQ);
+                        RefreshQuestPlannerUi();
+                    };
+                    Grid.SetColumn(btnDoneOne, 1);
+                    qRow.Children.Add(btnDoneOne);
+
+                    sp.Children.Add(qRow);
+                }
+
+                Grid.SetColumn(sp, 1);
+                outerGrid.Children.Add(sp);
+                card.Child = outerGrid;
+                _pnlQuestPlans.Children.Add(card);
+            }
         }
 
         private void StopScrcpy()

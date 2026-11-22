@@ -154,6 +154,14 @@ namespace ScrcpyLauncher
         private static extern IntPtr GetForegroundWindow();
 
         [DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(POINT pt);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+        private const uint GA_ROOT = 2;
+
+        [DllImport("user32.dll")]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         [DllImport("user32.dll")]
@@ -833,15 +841,22 @@ namespace ScrcpyLauncher
         {
             if (nCode >= 0 && _active && _profile != null && _client.IsConnected && _targetHwnd != IntPtr.Zero)
             {
+                int msg = wParam.ToInt32();
+                var ms = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
+
+                // Block vertical & horizontal mouse wheel whenever target scrcpy window is foreground OR hovered!
+                // (Windows 10/11 "scroll inactive windows" sends WM_MOUSEWHEEL to hovered inactive scrcpy.exe, causing 0xc0000005 crash with --mouse=disabled!)
+                if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL)
+                {
+                    if (GetForegroundWindow() == _targetHwnd)
+                        return (IntPtr)1;
+                    IntPtr hovered = WindowFromPoint(ms.pt);
+                    if (hovered == _targetHwnd || (hovered != IntPtr.Zero && GetAncestor(hovered, GA_ROOT) == _targetHwnd))
+                        return (IntPtr)1;
+                }
+
                 if (GetForegroundWindow() == _targetHwnd)
                 {
-                    int msg = wParam.ToInt32();
-
-                    // Block vertical & horizontal mouse wheel from reaching scrcpy.exe (--mouse=disabled crashes on SDL_MOUSEWHEEL!)
-                    if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL)
-                        return (IntPtr)1;
-
-                    var ms = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
 
                     // Extra mouse buttons (Middle=4, Mouse4=5, Mouse5=6) work as action keys in both modes
                     int extraVk = 0;
