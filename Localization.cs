@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "Scrcpy Launcher v1.5.2 — Android 미러링", "Scrcpy Launcher v1.5.2 — Android Mirroring", "Scrcpy Launcher v1.5.2 — Android ミラーリング");
+            A("win_title", "Scrcpy Launcher v1.5.3 — Android 미러링", "Scrcpy Launcher v1.5.3 — Android Mirroring", "Scrcpy Launcher v1.5.3 — Android ミラーリング");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");

@@ -106,16 +106,98 @@ namespace ScrcpyLauncher
         // Sorted longest-first so variants (아종/융광종) match before base monster names
         public static readonly string[] AllMonsterNames = new[]
         {
+            "융광종 리오레이아 아종", "융광종 디아블로스 아종",
             "융광종 도스쟈그라스", "융광종 도스기르오스", "융광종 쿠루루야크", "융광종 쥬라토도스",
             "융광종 토비카가치", "융광종 파오우르무", "융광종 레이기에나", "융광종 리오레이아",
-            "융광종 리오레우스", "융광종 디아블로스", "융광종 푸케푸케", "융광종 볼보로스",
-            "융광종 안쟈나프", "융광종 치치야크", "융광종 오도가론",
+            "융광종 리오레우스", "융광종 디아블로스", "융광종 라도발킨", "융광종 푸케푸케",
+            "융광종 볼보로스", "융광종 안쟈나프", "융광종 치치야크", "융광종 오도가론",
             "리오레이아 아종", "디아블로스 아종", "루가 에알다",
             "도스쟈그라스", "도스기르오스", "쿠루루야크", "쥬라토도스",
             "토비카가치", "파오우르무", "레이기에나", "리오레이아",
-            "리오레우스", "디아블로스", "라도발킨", "크샬다오라",
+            "리오레우스", "디아블로스", "라도발킨", "크샬다오라", "네르기간테",
             "푸케푸케", "볼보로스", "안쟈나프", "치치야크", "오도가론"
         };
+
+        private class MonsterDef
+        {
+            public string Name;
+            public string Species;
+            public bool IsRadiant;
+            public string[] Regions;
+        }
+
+        // Cross-verified across Game8, Gamerch, GameWith, and MHOBuilds
+        private static readonly MonsterDef[] MonsterCatalog = new[]
+        {
+            // 아룡종
+            new MonsterDef { Name = "도스쟈그라스", Species = "아룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "찬란한 군도" } },
+            new MonsterDef { Name = "도스기르오스", Species = "아룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "부패의 심연" } },
+            new MonsterDef { Name = "토비카가치", Species = "아룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "찬란한 군도" } },
+            new MonsterDef { Name = "오도가론", Species = "아룡종", IsRadiant = false, Regions = new[] { "부패의 심연", "찬란한 군도" } },
+            new MonsterDef { Name = "융광종 도스쟈그라스", Species = "아룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "부패의 심연", "찬란한 군도" } },
+            new MonsterDef { Name = "융광종 도스기르오스", Species = "아룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "부패의 심연" } },
+            new MonsterDef { Name = "융광종 토비카가치", Species = "아룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "부패의 심연" } },
+            new MonsterDef { Name = "융광종 오도가론", Species = "아룡종", IsRadiant = true, Regions = new[] { "부패의 심연", "찬란한 군도" } },
+
+            // 조룡종
+            new MonsterDef { Name = "쿠루루야크", Species = "조룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "열사 평원" } },
+            new MonsterDef { Name = "푸케푸케", Species = "조룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "열사 평원", "찬란한 군도" } },
+            new MonsterDef { Name = "치치야크", Species = "조룡종", IsRadiant = false, Regions = new[] { "찬란한 군도" } },
+            new MonsterDef { Name = "융광종 쿠루루야크", Species = "조룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "열사 평원", "부패의 심연" } },
+            new MonsterDef { Name = "융광종 푸케푸케", Species = "조룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "열사 평원", "부패의 심연", "찬란한 군도" } },
+            new MonsterDef { Name = "융광종 치치야크", Species = "조룡종", IsRadiant = true, Regions = new[] { "찬란한 군도" } },
+
+            // 어룡종
+            new MonsterDef { Name = "쥬라토도스", Species = "어룡종", IsRadiant = false, Regions = new[] { "열사 평원" } },
+            new MonsterDef { Name = "융광종 쥬라토도스", Species = "어룡종", IsRadiant = true, Regions = new[] { "열사 평원" } },
+
+            // 수룡종
+            new MonsterDef { Name = "볼보로스", Species = "수룡종", IsRadiant = false, Regions = new[] { "열사 평원" } },
+            new MonsterDef { Name = "안쟈나프", Species = "수룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "열사 평원", "찬란한 군도" } },
+            new MonsterDef { Name = "라도발킨", Species = "수룡종", IsRadiant = false, Regions = new[] { "부패의 심연" } },
+            new MonsterDef { Name = "융광종 볼보로스", Species = "수룡종", IsRadiant = true, Regions = new[] { "열사 평원" } },
+            new MonsterDef { Name = "융광종 안쟈나프", Species = "수룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "열사 평원", "부패의 심연", "찬란한 군도" } },
+            new MonsterDef { Name = "융광종 라도발킨", Species = "수룡종", IsRadiant = true, Regions = new[] { "부패의 심연" } },
+
+            // 비룡종
+            new MonsterDef { Name = "리오레이아", Species = "비룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "열사 평원" } },
+            new MonsterDef { Name = "리오레이아 아종", Species = "비룡종", IsRadiant = false, Regions = new[] { "열사 평원", "부패의 심연", "찬란한 군도" } },
+            new MonsterDef { Name = "리오레우스", Species = "비룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "열사 평원" } },
+            new MonsterDef { Name = "디아블로스", Species = "비룡종", IsRadiant = false, Regions = new[] { "열사 평원", "부패의 심연" } },
+            new MonsterDef { Name = "디아블로스 아종", Species = "비룡종", IsRadiant = false, Regions = new[] { "열사 평원" } },
+            new MonsterDef { Name = "파오우르무", Species = "비룡종", IsRadiant = false, Regions = new[] { "찬란한 군도" } },
+            new MonsterDef { Name = "레이기에나", Species = "비룡종", IsRadiant = false, Regions = new[] { "찬란한 군도" } },
+            new MonsterDef { Name = "융광종 리오레이아", Species = "비룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "열사 평원", "부패의 심연" } },
+            new MonsterDef { Name = "융광종 리오레이아 아종", Species = "비룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "열사 평원" } },
+            new MonsterDef { Name = "융광종 리오레우스", Species = "비룡종", IsRadiant = true, Regions = new[] { "거목의 벌판", "열사 평원" } },
+            new MonsterDef { Name = "융광종 디아블로스", Species = "비룡종", IsRadiant = true, Regions = new[] { "열사 평원" } },
+            new MonsterDef { Name = "융광종 디아블로스 아종", Species = "비룡종", IsRadiant = true, Regions = new[] { "열사 평원" } },
+            new MonsterDef { Name = "융광종 파오우르무", Species = "비룡종", IsRadiant = true, Regions = new[] { "찬란한 군도" } },
+            new MonsterDef { Name = "융광종 레이기에나", Species = "비룡종", IsRadiant = true, Regions = new[] { "찬란한 군도" } },
+
+            // 고룡종
+            new MonsterDef { Name = "네르기간테", Species = "고룡종", IsRadiant = false, Regions = new[] { "거목의 벌판" } },
+            new MonsterDef { Name = "루가 에알다", Species = "고룡종", IsRadiant = false, Regions = new string[0] },
+            new MonsterDef { Name = "크샬다오라", Species = "고룡종", IsRadiant = false, Regions = new string[0] }
+        };
+
+        public static string GetMonstersForRegionAndSpecies(string region, string species, bool radiantOnly, bool includeRadiant)
+        {
+            if (string.IsNullOrEmpty(species) || species == "융광종") return "";
+            bool filterRegion = !string.IsNullOrEmpty(region) && FieldRegions.Contains(region);
+
+            var names = new List<string>();
+            for (int i = 0; i < MonsterCatalog.Length; i++)
+            {
+                var m = MonsterCatalog[i];
+                if (m.Species != species) continue;
+                if (radiantOnly && !m.IsRadiant) continue;
+                if (!radiantOnly && !includeRadiant && m.IsRadiant) continue;
+                if (filterRegion && !m.Regions.Contains(region)) continue;
+                names.Add(m.Name);
+            }
+            return string.Join(", ", names.ToArray());
+        }
 
         public static readonly Dictionary<string, string> SpeciesMonstersMap = new Dictionary<string, string>
         {
@@ -418,12 +500,23 @@ namespace ScrcpyLauncher
             }
             if (string.IsNullOrEmpty(title)) title = objective;
 
-            // Detect Region (Field 4 + 둥지 + 전 지역)
+            // Detect Monster Species & specific Monster Name FIRST (helps catch Nest quests even if "둥지" has an OCR typo!)
+            string species = FindBestMatch(allText, AllSpecies, 1);
+            string targetMonster = FindBestMatch(objective, AllMonsterNames, 1);
+            if (!string.IsNullOrEmpty(targetMonster))
+                objective = ReplaceFuzzySubstring(objective, targetMonster, 1);
+
+            // Detect Weapon condition (원거리 / 근거리 · 근접)
+            string weapon = "";
+            if (allText.Contains("원거리")) weapon = "원거리";
+            else if (allText.Contains("근거리") || allText.Contains("근접")) weapon = "근거리";
+
+            // Detect Region (Field 4 + 둥지 + 필드 무관)
             string region = "";
             bool isNest = false;
             bool isAnyField = false;
 
-            if (allText.Contains("둥지"))
+            if (allText.Contains("둥지") || allText.Contains("등지") || allText.Contains("동지") || allText.Contains("난이도"))
             {
                 region = "둥지";
                 isNest = true;
@@ -433,11 +526,6 @@ namespace ScrcpyLauncher
                 region = FindBestMatch(allText, FieldRegions, 1);
             }
 
-            // Detect Weapon condition (원거리 / 근거리)
-            string weapon = "";
-            if (allText.Contains("원거리")) weapon = "원거리";
-            else if (allText.Contains("근거리")) weapon = "근거리";
-
             if (string.IsNullOrEmpty(region))
             {
                 if (allText.Contains("필드") || !string.IsNullOrEmpty(weapon))
@@ -445,18 +533,19 @@ namespace ScrcpyLauncher
                     region = "필드 (지역 무관)";
                     isAnyField = true;
                 }
+                else if (!string.IsNullOrEmpty(targetMonster))
+                {
+                    // Specific monster name with no field region (e.g. "푸케푸케 포획") is a Nest quest!
+                    region = "둥지";
+                    isNest = true;
+                }
                 else
                 {
+                    // Never treat unknown/unclassified quests as IsAnyField so they never pollute field cards!
                     region = "기타/미분류";
-                    isAnyField = true;
+                    isAnyField = false;
                 }
             }
-
-            // Detect Monster Species & specific Monster Name (for Nest quests!)
-            string species = FindBestMatch(allText, AllSpecies, 1);
-            string targetMonster = FindBestMatch(objective, AllMonsterNames, 1);
-            if (!string.IsNullOrEmpty(targetMonster))
-                objective = ReplaceFuzzySubstring(objective, targetMonster, 1);
 
             // Detect Action Type (포획 / 토벌 / 사냥 / 기타)
             string action = "기타";
@@ -584,9 +673,9 @@ namespace ScrcpyLauncher
                 string region = list[0].Region;
                 string rawSp = list[0].Species ?? "";
                 string spLabel = string.IsNullOrEmpty(rawSp) ? "일반" : rawSp;
-                string monstersCap = GetSpeciesMonsters(rawSp, false, false);      // 포획: 일반/아종만
-                string monstersAll = GetSpeciesMonsters(rawSp, false, true);       // 사냥/토벌: 일반/아종 + 융광종 포함!
-                string radiantMonsters = GetSpeciesMonsters(rawSp, true, false);   // 융광종 조합: 융광종만
+                string monstersCap = GetMonstersForRegionAndSpecies(region, rawSp, false, false);      // 포획: 해당 지역 일반/아종만
+                string monstersAll = GetMonstersForRegionAndSpecies(region, rawSp, false, true);       // 사냥/토벌: 해당 지역 일반/아종 + 융광종
+                string radiantMonsters = GetMonstersForRegionAndSpecies(region, rawSp, true, false);   // 융광종 조합: 해당 지역 융광종만
 
                 var capList = list.Where(x => x.ActionType == "포획").ToList();
                 var slayList = list.Where(x => x.ActionType == "토벌").ToList();
@@ -602,7 +691,8 @@ namespace ScrcpyLauncher
                 List<QuestEntry> regionRadiants;
                 radiantByRegion.TryGetValue(region, out regionRadiants);
                 bool hasNonCapture = (slayList.Count > 0 || huntList.Count > 0);
-                bool canStackRadiant = (hasNonCapture && regionRadiants != null && regionRadiants.Count > 0 && rawSp != "고룡종");
+                // Only stack Radiant if this species actually spawns as Radiant in THIS region!
+                bool canStackRadiant = (hasNonCapture && regionRadiants != null && regionRadiants.Count > 0 && !string.IsNullOrEmpty(radiantMonsters));
 
                 if (capList.Count > 0 && (slayList.Count > 0 || canStackRadiant))
                 {
@@ -651,7 +741,7 @@ namespace ScrcpyLauncher
                 foreach (var bq in bonus) usedAnyFieldIds.Add(bq.Id);
             }
 
-            // 3. Remaining Radiant (융광종) quests: pair with any-field species/weapon quests using Radiant-ONLY monster list!
+            // 3. Remaining Radiant (융광종) quests: pair ONLY with any-field species that ACTUALLY spawn as Radiant in THIS region!
             var availableAnyFieldForRadiant = anyFieldQuests.Where(q => !usedAnyFieldIds.Contains(q.Id)).GroupBy(q => q.Species ?? "").ToList();
             var radiantConsumedAnyFieldIds = new HashSet<string>();
             foreach (var kv in radiantByRegion)
@@ -660,20 +750,27 @@ namespace ScrcpyLauncher
                 var rem = kv.Value.Where(q => !usedRadiantIds.Contains(q.Id)).ToList();
                 if (rem.Count == 0) continue;
 
+                bool pairedAny = false;
                 if (availableAnyFieldForRadiant.Count > 0)
                 {
                     foreach (var grp in availableAnyFieldForRadiant)
                     {
+                        string sp = grp.Key;
+                        string radiantOnlyMonsters = GetMonstersForRegionAndSpecies(region, sp, true, false);
+                        // Skip impossible combinations (e.g. 어룡종 does NOT spawn in 부패의 심연!)
+                        if (!string.IsNullOrEmpty(sp) && string.IsNullOrEmpty(radiantOnlyMonsters))
+                            continue;
+
                         var combined = new List<QuestEntry>(rem);
                         combined.AddRange(grp.ToList());
-                        string sp = grp.Key;
                         string lbl = string.IsNullOrEmpty(sp) ? "융광종" : ("융광종(" + sp + ")");
-                        string radiantOnlyMonsters = GetSpeciesMonsters(sp, true);
                         AddFieldGroupsSplitByWeapon(allGroups, region, lbl, "★사냥", radiantOnlyMonsters, combined);
                         foreach (var aq in grp) radiantConsumedAnyFieldIds.Add(aq.Id);
+                        pairedAny = true;
                     }
                 }
-                else
+
+                if (!pairedAny)
                 {
                     AddFieldGroupsSplitByWeapon(allGroups, region, "융광종", "★사냥", "", rem);
                 }
@@ -689,7 +786,7 @@ namespace ScrcpyLauncher
                 {
                     string sp = grp.Key;
                     var items = grp.ToList();
-                    AddFieldGroupsSplitByWeapon(allGroups, "아무 필드", string.IsNullOrEmpty(sp) ? "자유" : sp, "★사냥", GetSpeciesMonsters(sp, false, true), items);
+                    AddFieldGroupsSplitByWeapon(allGroups, "아무 필드", string.IsNullOrEmpty(sp) ? "자유" : sp, "★사냥", GetMonstersForRegionAndSpecies("", sp, false, true), items);
                 }
             }
 
