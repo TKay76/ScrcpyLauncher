@@ -601,7 +601,7 @@ namespace ScrcpyLauncher
                     capCombined.AddRange(capList);
                     capCombined.AddRange(huntList);
                     capCombined.AddRange(bonus);
-                    allGroups.Add(MakeFieldGroup(region, spLabel, "★포획", monsters, capCombined));
+                    AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monsters, capCombined);
 
                     var nonCap = new List<QuestEntry>();
                     nonCap.AddRange(slayList);
@@ -616,14 +616,14 @@ namespace ScrcpyLauncher
                     {
                         string lbl = canStackRadiant ? ("융광종(" + spLabel + ")") : spLabel;
                         string act = slayList.Count > 0 ? "★토벌" : "★사냥";
-                        allGroups.Add(MakeFieldGroup(region, lbl, act, canStackRadiant ? radiantMonsters : monsters, nonCap));
+                        AddFieldGroupsSplitByWeapon(allGroups, region, lbl, act, canStackRadiant ? radiantMonsters : monsters, nonCap);
                     }
                 }
                 else if (capList.Count > 0)
                 {
                     var combined = new List<QuestEntry>(list);
                     combined.AddRange(bonus);
-                    allGroups.Add(MakeFieldGroup(region, spLabel, "★포획", monsters, combined));
+                    AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monsters, combined);
                 }
                 else
                 {
@@ -636,7 +636,7 @@ namespace ScrcpyLauncher
                     combined.AddRange(bonus);
                     string lbl = canStackRadiant ? ("융광종(" + spLabel + ")") : spLabel;
                     string act = slayList.Count > 0 ? "★토벌" : "★사냥";
-                    allGroups.Add(MakeFieldGroup(region, lbl, act, canStackRadiant ? radiantMonsters : monsters, combined));
+                    AddFieldGroupsSplitByWeapon(allGroups, region, lbl, act, canStackRadiant ? radiantMonsters : monsters, combined);
                 }
 
                 foreach (var bq in bonus) usedAnyFieldIds.Add(bq.Id);
@@ -660,13 +660,13 @@ namespace ScrcpyLauncher
                         string sp = grp.Key;
                         string lbl = string.IsNullOrEmpty(sp) ? "융광종" : ("융광종(" + sp + ")");
                         string radiantOnlyMonsters = GetSpeciesMonsters(sp, true);
-                        allGroups.Add(MakeFieldGroup(region, lbl, "★사냥", radiantOnlyMonsters, combined));
+                        AddFieldGroupsSplitByWeapon(allGroups, region, lbl, "★사냥", radiantOnlyMonsters, combined);
                         foreach (var aq in grp) radiantConsumedAnyFieldIds.Add(aq.Id);
                     }
                 }
                 else
                 {
-                    allGroups.Add(MakeFieldGroup(region, "융광종", "★사냥", "", rem));
+                    AddFieldGroupsSplitByWeapon(allGroups, region, "융광종", "★사냥", "", rem);
                 }
             }
             foreach (var id in radiantConsumedAnyFieldIds) usedAnyFieldIds.Add(id);
@@ -680,7 +680,7 @@ namespace ScrcpyLauncher
                 {
                     string sp = grp.Key;
                     var items = grp.ToList();
-                    allGroups.Add(MakeFieldGroup("아무 필드", string.IsNullOrEmpty(sp) ? "자유" : sp, "★사냥", GetSpeciesMonsters(sp, false), items));
+                    AddFieldGroupsSplitByWeapon(allGroups, "아무 필드", string.IsNullOrEmpty(sp) ? "자유" : sp, "★사냥", GetSpeciesMonsters(sp, false), items);
                 }
             }
 
@@ -695,6 +695,29 @@ namespace ScrcpyLauncher
 
             result.AddRange(allGroups);
             return result;
+        }
+
+        private static void AddFieldGroupsSplitByWeapon(List<QuestPlanGroup> target, string region, string spLabel, string actionBadge, string monsters, List<QuestEntry> combined)
+        {
+            var ranged = combined.Where(x => x.WeaponType == "원거리").ToList();
+            var melee = combined.Where(x => x.WeaponType == "근거리").ToList();
+            var neutral = combined.Where(x => string.IsNullOrEmpty(x.WeaponType)).ToList();
+
+            // Never combine ranged (원거리) and melee (근거리) weapon quests into a single simultaneous card!
+            if (ranged.Count > 0 && melee.Count > 0)
+            {
+                var rList = new List<QuestEntry>(neutral);
+                rList.AddRange(ranged);
+                target.Add(MakeFieldGroup(region, spLabel, actionBadge, monsters, rList));
+
+                var mList = new List<QuestEntry>(neutral);
+                mList.AddRange(melee);
+                target.Add(MakeFieldGroup(region, spLabel, actionBadge, monsters, mList));
+            }
+            else
+            {
+                target.Add(MakeFieldGroup(region, spLabel, actionBadge, monsters, combined));
+            }
         }
 
         private static QuestPlanGroup MakeFieldGroup(string region, string spLabel, string actionBadge, string monsters, List<QuestEntry> combined)
