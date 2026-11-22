@@ -137,13 +137,21 @@ namespace ScrcpyLauncher
             { "비룡종", "융광종 리오레이아, 융광종 리오레우스, 융광종 디아블로스, 융광종 파오우르무, 융광종 레이기에나" }
         };
 
-        public static string GetSpeciesMonsters(string species, bool radiantOnly = false)
+        public static string GetSpeciesMonsters(string species, bool radiantOnly = false, bool includeRadiant = false)
         {
             if (string.IsNullOrEmpty(species)) return "";
             string val;
             if (radiantOnly)
                 return RadiantSpeciesMonstersMap.TryGetValue(species, out val) ? val : "";
-            return SpeciesMonstersMap.TryGetValue(species, out val) ? val : "";
+
+            string baseList = SpeciesMonstersMap.TryGetValue(species, out val) ? val : "";
+            if (includeRadiant)
+            {
+                string radList;
+                if (RadiantSpeciesMonstersMap.TryGetValue(species, out radList) && !string.IsNullOrEmpty(radList))
+                    return string.IsNullOrEmpty(baseList) ? radList : (baseList + ", " + radList);
+            }
+            return baseList;
         }
 
         public static string GetSpeciesGuideText()
@@ -576,8 +584,9 @@ namespace ScrcpyLauncher
                 string region = list[0].Region;
                 string rawSp = list[0].Species ?? "";
                 string spLabel = string.IsNullOrEmpty(rawSp) ? "일반" : rawSp;
-                string monsters = GetSpeciesMonsters(rawSp, false);
-                string radiantMonsters = GetSpeciesMonsters(rawSp, true);
+                string monstersCap = GetSpeciesMonsters(rawSp, false, false);      // 포획: 일반/아종만
+                string monstersAll = GetSpeciesMonsters(rawSp, false, true);       // 사냥/토벌: 일반/아종 + 융광종 포함!
+                string radiantMonsters = GetSpeciesMonsters(rawSp, true, false);   // 융광종 조합: 융광종만
 
                 var capList = list.Where(x => x.ActionType == "포획").ToList();
                 var slayList = list.Where(x => x.ActionType == "토벌").ToList();
@@ -601,7 +610,7 @@ namespace ScrcpyLauncher
                     capCombined.AddRange(capList);
                     capCombined.AddRange(huntList);
                     capCombined.AddRange(bonus);
-                    AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monsters, capCombined);
+                    AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monstersCap, capCombined);
 
                     var nonCap = new List<QuestEntry>();
                     nonCap.AddRange(slayList);
@@ -616,14 +625,14 @@ namespace ScrcpyLauncher
                     {
                         string lbl = canStackRadiant ? ("융광종(" + spLabel + ")") : spLabel;
                         string act = slayList.Count > 0 ? "★토벌" : "★사냥";
-                        AddFieldGroupsSplitByWeapon(allGroups, region, lbl, act, canStackRadiant ? radiantMonsters : monsters, nonCap);
+                        AddFieldGroupsSplitByWeapon(allGroups, region, lbl, act, canStackRadiant ? radiantMonsters : monstersAll, nonCap);
                     }
                 }
                 else if (capList.Count > 0)
                 {
                     var combined = new List<QuestEntry>(list);
                     combined.AddRange(bonus);
-                    AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monsters, combined);
+                    AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monstersCap, combined);
                 }
                 else
                 {
@@ -636,7 +645,7 @@ namespace ScrcpyLauncher
                     combined.AddRange(bonus);
                     string lbl = canStackRadiant ? ("융광종(" + spLabel + ")") : spLabel;
                     string act = slayList.Count > 0 ? "★토벌" : "★사냥";
-                    AddFieldGroupsSplitByWeapon(allGroups, region, lbl, act, canStackRadiant ? radiantMonsters : monsters, combined);
+                    AddFieldGroupsSplitByWeapon(allGroups, region, lbl, act, canStackRadiant ? radiantMonsters : monstersAll, combined);
                 }
 
                 foreach (var bq in bonus) usedAnyFieldIds.Add(bq.Id);
@@ -680,7 +689,7 @@ namespace ScrcpyLauncher
                 {
                     string sp = grp.Key;
                     var items = grp.ToList();
-                    AddFieldGroupsSplitByWeapon(allGroups, "아무 필드", string.IsNullOrEmpty(sp) ? "자유" : sp, "★사냥", GetSpeciesMonsters(sp, false), items);
+                    AddFieldGroupsSplitByWeapon(allGroups, "아무 필드", string.IsNullOrEmpty(sp) ? "자유" : sp, "★사냥", GetSpeciesMonsters(sp, false, true), items);
                 }
             }
 
