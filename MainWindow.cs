@@ -104,11 +104,26 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+        private const uint SWP_NOMOVE = 0x0002;
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOACTIVATE = 0x0010;
+
         private const int WM_INPUT = 0x00FF;
         private const int WM_HOTKEY = 0x0312;
         private const int HOTKEY_QUEST_SCAN = 9001;
+        private const int HOTKEY_SCREENSHOT = 9002;
         private const uint VK_F8 = 0x77;
+        private const uint VK_F12 = 0x7B;
+        private const uint RIM_TYPEHID = 2;
         private bool _questHotKeyRegistered = false;
+        private bool _screenshotHotKeyRegistered = false;
+        private bool _isCapturingScreenshot = false;
+        private DateTime _lastShareShotUtc = DateTime.MinValue;
         private const uint RID_INPUT = 0x10000003;
         private const uint RIDEV_INPUTSINK = 0x00000100;
         private const uint RIM_TYPEMOUSE = 0;
@@ -163,6 +178,7 @@ namespace ScrcpyLauncher
         private CheckBox _chkLowLatency;
         private CheckBox _chkNoAudio;
         private CheckBox _chkFullscreen;
+        private CheckBox _chkAlwaysOnTop;
         private CheckBox _chkPrintFps;
 
         private TextBox _txtRecordFolder;
@@ -192,6 +208,7 @@ namespace ScrcpyLauncher
         // Keymap Tab Controls
         private Border _bdKmModeWarning;
         private TextBlock _txtKmModeWarning;
+        private CheckBox _chkGamepadKbAssist;
         private ComboBox _cmbKeyProfiles;
         private Button _btnImportKmp;
         private Button _btnSaveProfile;
@@ -230,7 +247,9 @@ namespace ScrcpyLauncher
         private Button _btnQuestScanOne;
         private Button _btnQuestUndo;
         private Button _btnQuestSpeciesGuide;
+        private Button _btnQuestResetDaily;
         private Button _btnQuestClear;
+        private TextBlock _txtQuestDaily;
         private TextBlock _txtQuestCount;
         private TextBlock _txtQuestBanner;
         private StackPanel _pnlQuestPlans;
@@ -602,7 +621,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.5.3' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.5.4' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -756,14 +775,15 @@ namespace ScrcpyLauncher
         </ComboBox>
       </Grid>
 
-      <UniformGrid Columns='3' Margin='2,2,0,8'>
+      <WrapPanel Margin='2,2,0,8'>
         <CheckBox x:Name='chkTurnScreenOff' Content='폰 화면 끄기 (-S)'/>
         <CheckBox x:Name='chkStayAwake' Content='절전 방지 (-w)'/>
         <CheckBox x:Name='chkLowLatency' Content='저지연 인코딩'/>
         <CheckBox x:Name='chkNoAudio' Content='소리 끄기'/>
         <CheckBox x:Name='chkFullscreen' Content='전체화면 시작 (-f)'/>
+        <CheckBox x:Name='chkAlwaysOnTop' Content='항상 위에 (실시간)'/>
         <CheckBox x:Name='chkPrintFps' Content='화면 FPS 오버레이'/>
-      </UniformGrid>
+      </WrapPanel>
 
       <Border Height='1' Background='#F1F5F9' Margin='0,0,0,8'/>
 
@@ -829,7 +849,10 @@ namespace ScrcpyLauncher
       <StackPanel>
         <!-- Mode Warning Banner (shown when Gamepad or Normal mode is active) -->
         <Border x:Name='bdKmModeWarning' Background='#FFFBEB' BorderBrush='#FCD34D' BorderThickness='1' CornerRadius='8' Padding='11,7' Margin='0,0,0,8' Visibility='Collapsed'>
-          <TextBlock x:Name='txtKmModeWarning' Text='현재 키보드+마우스 모드가 아닙니다. 키 매핑 기능은 상단에서 [키보드 + 마우스] 모드를 선택했을 때 작동합니다. (게임패드 버튼 리매핑은 미지원)' FontSize='11.5' Foreground='#92400E' TextWrapping='Wrap'/>
+          <StackPanel>
+            <TextBlock x:Name='txtKmModeWarning' Text='현재 키보드+마우스 모드가 아닙니다. 키 매핑 기능은 상단에서 [키보드 + 마우스] 모드를 선택했을 때 작동합니다. (게임패드 버튼 리매핑은 미지원)' FontSize='11.5' Foreground='#92400E' TextWrapping='Wrap'/>
+            <CheckBox x:Name='chkGamepadKbAssist' Content='게임패드 모드에서도 키보드 보조 매핑 사용 (모험단 춤 방향키 등 · 마우스 시점 제외)' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E3A8A' Margin='0,5,0,0'/>
+          </StackPanel>
         </Border>
 
         <!-- Profile Card -->
@@ -969,14 +992,20 @@ namespace ScrcpyLauncher
                 <ColumnDefinition Width='*'/>
                 <ColumnDefinition Width='Auto'/>
                 <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='Auto'/>
+                <ColumnDefinition Width='Auto'/>
               </Grid.ColumnDefinitions>
-              <Button x:Name='btnQuestScanOne' Grid.Column='0' Content='+ 현재 퀘스트 수집 (F8)' Style='{StaticResource SoftBlueBtn}' Margin='0,0,6,0'/>
-              <Button x:Name='btnQuestUndo' Grid.Column='1' Content='↩ 방금 1건 취소' Style='{StaticResource SubBtn}' Margin='0,0,6,0'/>
-              <Button x:Name='btnQuestSpeciesGuide' Grid.Column='2' Content='종족 도감 ?' Style='{StaticResource SubBtn}' Margin='0,0,6,0'/>
-              <Border Grid.Column='4' Background='#EFF6FF' BorderBrush='#BFDBFE' BorderThickness='1' CornerRadius='6' Padding='10,4' Margin='0,0,6,0' VerticalAlignment='Center'>
+              <Button x:Name='btnQuestScanOne' Grid.Column='0' Content='+ 수집 (F8)' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
+              <Button x:Name='btnQuestUndo' Grid.Column='1' Content='↩ 취소' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
+              <Button x:Name='btnQuestSpeciesGuide' Grid.Column='2' Content='종족 도감 ?' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
+              <Border Grid.Column='4' Background='#ECFDF5' BorderBrush='#A7F3D0' BorderThickness='1' CornerRadius='6' Padding='8,4' Margin='0,0,4,0' VerticalAlignment='Center' ToolTip='매일 한국시간 오전 5시에 자동 초기화됩니다.'>
+                <TextBlock x:Name='txtQuestDaily' Text='오늘 완료: 0건' FontSize='11.5' FontWeight='Bold' Foreground='#047857'/>
+              </Border>
+              <Button x:Name='btnQuestResetDaily' Grid.Column='5' Content='리셋' Style='{StaticResource SubBtn}' Padding='7,4' Margin='0,0,6,0' ToolTip='오늘 완료 카운터를 0으로 초기화합니다.'/>
+              <Border Grid.Column='6' Background='#EFF6FF' BorderBrush='#BFDBFE' BorderThickness='1' CornerRadius='6' Padding='8,4' Margin='0,0,5,0' VerticalAlignment='Center'>
                 <TextBlock x:Name='txtQuestCount' Text='보유: 0 / 10' FontSize='11.5' FontWeight='Bold' Foreground='#1D4ED8'/>
               </Border>
-              <Button x:Name='btnQuestClear' Grid.Column='5' Content='전체 비우기' Style='{StaticResource SoftRedBtn}'/>
+              <Button x:Name='btnQuestClear' Grid.Column='7' Content='비우기' Style='{StaticResource SoftRedBtn}' Padding='9,4'/>
             </Grid>
             <Border Background='#F0FDF4' BorderBrush='#86EFAC' BorderThickness='1' CornerRadius='7' Padding='10,6'>
               <TextBlock x:Name='txtQuestBanner' Text='게임에서 퀘스트를 클릭한 뒤 [F8]을 눌러 수집하세요. (최대 10개)' FontSize='12' FontWeight='SemiBold' Foreground='#166534' TextWrapping='Wrap'/>
@@ -1115,6 +1144,7 @@ namespace ScrcpyLauncher
             _chkLowLatency = (CheckBox)root.FindName("chkLowLatency");
             _chkNoAudio = (CheckBox)root.FindName("chkNoAudio");
             _chkFullscreen = (CheckBox)root.FindName("chkFullscreen");
+            _chkAlwaysOnTop = (CheckBox)root.FindName("chkAlwaysOnTop");
             _chkPrintFps = (CheckBox)root.FindName("chkPrintFps");
 
             _txtRecordFolder = (TextBox)root.FindName("txtRecordFolder");
@@ -1144,6 +1174,7 @@ namespace ScrcpyLauncher
             // Keymap controls
             _bdKmModeWarning = (Border)root.FindName("bdKmModeWarning");
             _txtKmModeWarning = (TextBlock)root.FindName("txtKmModeWarning");
+            _chkGamepadKbAssist = (CheckBox)root.FindName("chkGamepadKbAssist");
             _cmbKeyProfiles = (ComboBox)root.FindName("cmbKeyProfiles");
             _btnImportKmp = (Button)root.FindName("btnImportKmp");
             _btnSaveProfile = (Button)root.FindName("btnSaveProfile");
@@ -1182,7 +1213,9 @@ namespace ScrcpyLauncher
             _btnQuestScanOne = (Button)root.FindName("btnQuestScanOne");
             _btnQuestUndo = (Button)root.FindName("btnQuestUndo");
             _btnQuestSpeciesGuide = (Button)root.FindName("btnQuestSpeciesGuide");
+            _btnQuestResetDaily = (Button)root.FindName("btnQuestResetDaily");
             _btnQuestClear = (Button)root.FindName("btnQuestClear");
+            _txtQuestDaily = (TextBlock)root.FindName("txtQuestDaily");
             _txtQuestCount = (TextBlock)root.FindName("txtQuestCount");
             _txtQuestBanner = (TextBlock)root.FindName("txtQuestBanner");
             _pnlQuestPlans = (StackPanel)root.FindName("pnlQuestPlans");
@@ -1207,7 +1240,9 @@ namespace ScrcpyLauncher
             AttachGuide(_chkLowLatency, "저지연 인코딩", "하드웨어 인코더에 low-latency=1 옵션을 전달해 PC 화면이 반박자 밀리는 현상을 줄여줍니다.");
             AttachGuide(_chkNoAudio, "소리 끄기", "오디오 전송을 끕니다. 블루투스 이어폰을 폰에 직접 연결해 쓰거나, 오디오 버퍼로 인한 지연 여부를 테스트할 때 유용합니다.");
             AttachGuide(_chkFullscreen, "전체화면 시작 (-f)", "실행 즉시 PC 모니터 전체화면으로 띄웁니다. 실행 중에도 Alt + F 키로 언제든 전환할 수 있습니다.");
+            AttachGuide(_chkAlwaysOnTop, "항상 위에 (실시간)", "미러링 창을 항상 다른 창 위에 고정합니다. 미러링 도중에도 체크를 켜거나 끄면 즉시 반영됩니다.");
             AttachGuide(_chkPrintFps, "화면 FPS 오버레이", "미러링 창 좌측 상단에 클릭을 방해하지 않는 투명 FPS 표시기를 띄웁니다. FPS 수치는 로그창을 어지럽히지 않고 오버레이와 배지에만 표시됩니다.");
+            AttachGuide(_chkGamepadKbAssist, "게임패드 모드 키보드 보조 매핑", "게임패드 모드에서도 키보드 액션 매핑(예: 모험단 춤 방향키)을 함께 사용할 수 있습니다. 마우스 시점과 클릭은 패드/일반 조작을 방해하지 않도록 제외됩니다.");
             AttachGuide(_btnScreenshot, "화면 캡처 (.png)", "연결된 기기의 현재 화면(가상 디스플레이 실행 중이면 해당 화면 포함)을 PNG 이미지로 즉시 저장합니다.");
             AttachGuide(_btnRecordToggle, "화면 녹화 시작 / 중지 (.mp4)", "클릭하면 미러링을 끊지 않고 즉시 백그라운드 녹화를 시작합니다. 다시 눌러 녹화를 중지하면 지정 폴더에 MP4 파일로 저장됩니다.");
             AttachGuide(_chkVirtualDisplay, "가상 디스플레이 (--new-display)", "폴더블·태블릿 등 화면 비율이 다른 기기에서도 PC 모니터에 꽉 차는 16:9(1920x1080 등) 가상 화면을 별도로 띄웁니다.");
@@ -1299,6 +1334,14 @@ namespace ScrcpyLauncher
                 _scannedQuests.Clear();
                 RefreshQuestPlannerUi();
                 AppendLog("[퀘스트] 보유 퀘스트 목록을 모두 비웠습니다.");
+            };
+            _btnQuestResetDaily.Click += (s, e) =>
+            {
+                _settings.DailyQuestClearedCount = 0;
+                _settings.DailyQuestDateKey = GetDailyQuestDateKey();
+                _settings.Save();
+                UpdateDailyQuestCounterUi();
+                AppendLog("[퀘스트] 오늘 완료 카운터를 0으로 초기화했습니다.");
             };
             AttachGuide(_chkKmNewWheel, "휠 드래그 키 (부위 조준 · 아이템/탄환 휠)", "체크 후 추가하면 키를 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다. (예: Tab 부위 조준, G 아이템/탄환 휠)");
             AttachGuide(_chkKmRight, "우클릭 보조", "시점 고정 ON/OFF 모두에서 마우스 우클릭을 지정된 버튼(특수 공격·회피·탄 선택 등)으로 사용합니다. 일반 모드에서 좌클릭은 화면 터치로 그대로 유지됩니다.");
@@ -1437,8 +1480,12 @@ namespace ScrcpyLauncher
             _chkNoAudio.Unchecked += (s, e) => onOptChanged();
             _chkFullscreen.Checked += (s, e) => onOptChanged();
             _chkFullscreen.Unchecked += (s, e) => onOptChanged();
+            _chkAlwaysOnTop.Checked += (s, e) => { if (!_isInitializing) ApplyAlwaysOnTopLive(true); onOptChanged(); };
+            _chkAlwaysOnTop.Unchecked += (s, e) => { if (!_isInitializing) ApplyAlwaysOnTopLive(false); onOptChanged(); };
             _chkPrintFps.Checked += (s, e) => onOptChanged();
             _chkPrintFps.Unchecked += (s, e) => onOptChanged();
+            _chkGamepadKbAssist.Checked += (s, e) => { if (!_isInitializing) { _settings.GamepadKeyboardAssist = true; _settings.Save(); } };
+            _chkGamepadKbAssist.Unchecked += (s, e) => { if (!_isInitializing) { _settings.GamepadKeyboardAssist = false; _settings.Save(); } };
 
             _chkVirtualDisplay.Checked += (s, e) => onOptChanged();
             _chkVirtualDisplay.Unchecked += (s, e) => onOptChanged();
@@ -1527,6 +1574,7 @@ namespace ScrcpyLauncher
             _chkLowLatency.Content = Loc.T("chk_low_latency");
             _chkNoAudio.Content = Loc.T("chk_no_audio");
             _chkFullscreen.Content = Loc.T("chk_fullscreen");
+            _chkAlwaysOnTop.Content = Loc.T("chk_always_on_top");
             _chkPrintFps.Content = Loc.T("chk_fps_overlay");
             SetTextByName(root, "lblRecFolder", Loc.T("lbl_rec_folder"));
             _btnBrowseRecord.Content = Loc.T("btn_browse");
@@ -1540,6 +1588,7 @@ namespace ScrcpyLauncher
             _btnRefreshApps.Content = Loc.T("btn_load_apps");
 
             _txtKmModeWarning.Text = Loc.T("km_warn");
+            if (_chkGamepadKbAssist != null) _chkGamepadKbAssist.Content = Loc.T("chk_gamepad_kb_assist");
             SetTextByName(root, "txtKmSec1", Loc.T("km_sec1"));
             _btnReloadProfiles.Content = Loc.T("btn_refresh");
             _btnImportKmp.Content = Loc.T("btn_import_kmp");
@@ -1626,9 +1675,16 @@ namespace ScrcpyLauncher
                             usUsage = 0x02,     // Mouse
                             dwFlags = RIDEV_INPUTSINK,
                             hwndTarget = hwnd
+                        },
+                        new RAWINPUTDEVICE
+                        {
+                            usUsagePage = 0x0C, // Consumer Control (Xbox Share button)
+                            usUsage = 0x01,     // Consumer Control
+                            dwFlags = RIDEV_INPUTSINK,
+                            hwndTarget = hwnd
                         }
                     };
-                    RegisterRawInputDevices(rid, 1, (uint)Marshal.SizeOf(typeof(RAWINPUTDEVICE)));
+                    RegisterRawInputDevices(rid, (uint)rid.Length, (uint)Marshal.SizeOf(typeof(RAWINPUTDEVICE)));
                 }
             }
             catch { }
@@ -1636,32 +1692,69 @@ namespace ScrcpyLauncher
 
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_QUEST_SCAN)
+            if (msg == WM_HOTKEY)
             {
-                handled = true;
-                var _ = ScanCurrentQuestAsync(true);
-                return IntPtr.Zero;
-            }
-            if (msg == WM_INPUT && _hookEngine != null && _hookEngine.IsActive && (_hookEngine.IsCameraLocked || _hookEngine.IsWheelDragging))
-            {
-                uint headerSize = (uint)Marshal.SizeOf(typeof(RAWINPUTHEADER));
-                uint size = 0;
-                GetRawInputData(lParam, RID_INPUT, null, ref size, headerSize);
-                if (size >= headerSize + 20 && size <= 256)
+                int id = wParam.ToInt32();
+                if (id == HOTKEY_QUEST_SCAN)
                 {
-                    byte[] buf = new byte[size];
-                    if (GetRawInputData(lParam, RID_INPUT, buf, ref size, headerSize) == size)
+                    handled = true;
+                    var _ = ScanCurrentQuestAsync(true);
+                    return IntPtr.Zero;
+                }
+                if (id == HOTKEY_SCREENSHOT)
+                {
+                    handled = true;
+                    if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                        BtnScreenshot_Click(null, null);
+                    return IntPtr.Zero;
+                }
+            }
+            if (msg == WM_INPUT)
+            {
+                bool needMouse = _hookEngine != null && _hookEngine.IsActive && (_hookEngine.IsCameraLocked || _hookEngine.IsWheelDragging);
+                bool mirroring = _scrcpyProcess != null && !_scrcpyProcess.HasExited;
+                if (needMouse || mirroring)
+                {
+                    uint headerSize = (uint)Marshal.SizeOf(typeof(RAWINPUTHEADER));
+                    uint size = 0;
+                    GetRawInputData(lParam, RID_INPUT, null, ref size, headerSize);
+                    if (size >= headerSize + 8 && size <= 512)
                     {
-                        uint dwType = BitConverter.ToUInt32(buf, 0);
-                        if (dwType == RIM_TYPEMOUSE)
+                        byte[] buf = new byte[size];
+                        if (GetRawInputData(lParam, RID_INPUT, buf, ref size, headerSize) == size)
                         {
-                            ushort usFlags = BitConverter.ToUInt16(buf, (int)headerSize);
-                            if ((usFlags & 0x01) == 0) // Relative mouse movement (MOUSE_MOVE_RELATIVE)
+                            uint dwType = BitConverter.ToUInt32(buf, 0);
+                            if (dwType == RIM_TYPEMOUSE && needMouse && size >= headerSize + 20)
                             {
-                                int dx = BitConverter.ToInt32(buf, (int)headerSize + 12);
-                                int dy = BitConverter.ToInt32(buf, (int)headerSize + 16);
-                                if (dx != 0 || dy != 0)
-                                    _hookEngine.OnRawMouseDelta(dx, dy);
+                                ushort usFlags = BitConverter.ToUInt16(buf, (int)headerSize);
+                                if ((usFlags & 0x01) == 0) // Relative mouse movement (MOUSE_MOVE_RELATIVE)
+                                {
+                                    int dx = BitConverter.ToInt32(buf, (int)headerSize + 12);
+                                    int dy = BitConverter.ToInt32(buf, (int)headerSize + 16);
+                                    if (dx != 0 || dy != 0)
+                                        _hookEngine.OnRawMouseDelta(dx, dy);
+                                }
+                            }
+                            else if (dwType == RIM_TYPEHID && mirroring)
+                            {
+                                uint dwSizeHid = BitConverter.ToUInt32(buf, (int)headerSize);
+                                uint dwCount = BitConverter.ToUInt32(buf, (int)headerSize + 4);
+                                int rawOffset = (int)headerSize + 8;
+                                if (dwSizeHid >= 2 && dwSizeHid <= 8 && dwCount >= 1 && rawOffset + (int)dwSizeHid <= buf.Length)
+                                {
+                                    // Xbox Series Share button emits Consumer Control usage 0x00B2 (Record)
+                                    bool isShare = false;
+                                    if (buf[rawOffset] == 0xB2 && (dwSizeHid < 2 || buf[rawOffset + 1] == 0x00))
+                                        isShare = true;
+                                    else if (dwSizeHid >= 2 && buf[rawOffset + 1] == 0xB2 && (dwSizeHid < 3 || buf[rawOffset + 2] == 0x00))
+                                        isShare = true;
+
+                                    if (isShare && (DateTime.UtcNow - _lastShareShotUtc).TotalMilliseconds > 800)
+                                    {
+                                        _lastShareShotUtc = DateTime.UtcNow;
+                                        BtnScreenshot_Click(null, null);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1740,14 +1833,25 @@ namespace ScrcpyLauncher
             {
                 var hwnd = new WindowInteropHelper(this).Handle;
                 if (hwnd == IntPtr.Zero) return;
-                if (active && !_questHotKeyRegistered)
+                if (active)
                 {
-                    _questHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_QUEST_SCAN, 0, VK_F8);
+                    if (!_questHotKeyRegistered)
+                        _questHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_QUEST_SCAN, 0, VK_F8);
+                    if (!_screenshotHotKeyRegistered)
+                        _screenshotHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_SCREENSHOT, 0, VK_F12);
                 }
-                else if (!active && _questHotKeyRegistered)
+                else
                 {
-                    UnregisterHotKey(hwnd, HOTKEY_QUEST_SCAN);
-                    _questHotKeyRegistered = false;
+                    if (_questHotKeyRegistered)
+                    {
+                        UnregisterHotKey(hwnd, HOTKEY_QUEST_SCAN);
+                        _questHotKeyRegistered = false;
+                    }
+                    if (_screenshotHotKeyRegistered)
+                    {
+                        UnregisterHotKey(hwnd, HOTKEY_SCREENSHOT);
+                        _screenshotHotKeyRegistered = false;
+                    }
                 }
             }
             catch { }
@@ -2136,6 +2240,7 @@ namespace ScrcpyLauncher
             if (_chkLowLatency.IsChecked == true) args.Add("--video-codec-options=low-latency=1");
             if (_chkNoAudio.IsChecked == true) args.Add("--no-audio");
             if (_chkFullscreen.IsChecked == true) args.Add("-f");
+            if (_chkAlwaysOnTop.IsChecked == true) args.Add("--always-on-top");
             if (_chkPrintFps.IsChecked == true) args.Add("--print-fps");
 
             string mode = GetControlMode();
@@ -2199,6 +2304,7 @@ namespace ScrcpyLauncher
                 _txtModeSummary.Text = Loc.T("summary_gp");
                 _txtModeSummary.Visibility = Visibility.Visible;
                 if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Visible;
+                if (_chkGamepadKbAssist != null) _chkGamepadKbAssist.Visibility = Visibility.Visible;
             }
             else
             {
@@ -2206,6 +2312,7 @@ namespace ScrcpyLauncher
                 _txtModeSummary.Text = Loc.T("summary_nm");
                 _txtModeSummary.Visibility = Visibility.Visible;
                 if (_bdKmModeWarning != null) _bdKmModeWarning.Visibility = Visibility.Visible;
+                if (_chkGamepadKbAssist != null) _chkGamepadKbAssist.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -2316,6 +2423,8 @@ namespace ScrcpyLauncher
                     StandardOutputEncoding = Encoding.UTF8,
                     StandardErrorEncoding = Encoding.UTF8
                 };
+                // Prevent SDL2 from minimizing fullscreen window on Alt-Tab focus loss
+                psi.EnvironmentVariables["SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0";
 
                 _scrcpyProcess = new Process { StartInfo = psi, EnableRaisingEvents = true };
                 _scrcpyProcess.OutputDataReceived += (s, ev) => { if (ev.Data != null) HandleScrcpyOutput(ev.Data); };
@@ -2356,10 +2465,12 @@ namespace ScrcpyLauncher
 
         private async void BtnScreenshot_Click(object sender, RoutedEventArgs e)
         {
+            if (_isCapturingScreenshot) return;
             var dev = _cmbDevices.SelectedItem as DeviceInfo;
             if (!_adb.IsValid || dev == null || dev.State != "device")
             {
-                MessageBox.Show("먼저 연결된 기기를 선택해 주세요.", "안내", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (sender != null)
+                    MessageBox.Show("먼저 연결된 기기를 선택해 주세요.", "안내", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -2377,6 +2488,7 @@ namespace ScrcpyLauncher
             string fileName = string.Format("screenshot_{0:yyyyMMdd_HHmmss}.png", DateTime.Now);
             string fullPath = Path.Combine(saveDir, fileName);
 
+            _isCapturingScreenshot = true;
             _btnScreenshot.IsEnabled = false;
             AppendLog("[캡처] 화면을 캡처하는 중...");
             try
@@ -2393,21 +2505,42 @@ namespace ScrcpyLauncher
                     }
                 }
 
+                bool savedOk = false;
                 if (capturedFromWindow)
                 {
+                    savedOk = true;
                     AppendLog("[캡처] 미러링 화면 저장 완료: " + fullPath);
                 }
                 else
                 {
                     var res = await _adb.CaptureScreenshotAsync(dev.Serial, fullPath, _activeDisplayId);
                     if (res.Item1)
+                    {
+                        savedOk = true;
                         AppendLog("[캡처] 기기 화면 저장 완료: " + res.Item2);
+                    }
                     else
+                    {
                         AppendLog("[캡처 실패] " + res.Item2);
+                    }
+                }
+
+                if (savedOk && _scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                {
+                    if (_keymapOverlay == null)
+                    {
+                        _keymapOverlay = new KeymapOverlayWindow();
+                        _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
+                        _keymapOverlay.SetShowHints(false);
+                    }
+                    _keymapOverlay.ShowToast("📸 스크린샷 저장됨 (" + fileName + ")");
+                    if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
+                    SyncFpsOverlay();
                 }
             }
             finally
             {
+                _isCapturingScreenshot = false;
                 UpdateUiStates();
             }
         }
@@ -2622,8 +2755,10 @@ namespace ScrcpyLauncher
                             }
                         }
 
-                        // Auto-start keymap as soon as the mirroring window is ready in Keymap mode!
-                        if (!_autoKeymapTriggered && GetControlMode() == "keymap" && _hookEngine != null && !_hookEngine.IsActive)
+                        // Auto-start keymap in Keymap mode, or in Gamepad mode if Keyboard Assist is checked
+                        string curMode = GetControlMode();
+                        bool wantAutoKm = (curMode == "keymap") || (curMode == "gamepad" && _chkGamepadKbAssist != null && _chkGamepadKbAssist.IsChecked == true);
+                        if (!_autoKeymapTriggered && wantAutoKm && _hookEngine != null && !_hookEngine.IsActive)
                         {
                             _autoKeymapTriggered = true;
                             BtnKmStart_Click(null, null);
@@ -2827,6 +2962,8 @@ namespace ScrcpyLauncher
             }
 
             _scrcpyProcess.Refresh();
+            bool kbAssistOnly = (GetControlMode() == "gamepad");
+            _hookEngine.KeyboardOnlyAssist = kbAssistOnly;
             _hookEngine.SetProfile(_activeProfile);
             _hookEngine.SetTargetWindow(_scrcpyProcess.MainWindowHandle);
             _hookEngine.Start();
@@ -2836,14 +2973,17 @@ namespace ScrcpyLauncher
                 _keymapOverlay = new KeymapOverlayWindow();
                 _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
             }
-            _keymapOverlay.SetShowHints(_chkKmHints.IsChecked == true);
+            _keymapOverlay.SetShowHints(!kbAssistOnly && _chkKmHints.IsChecked == true);
             _keymapOverlay.SetHintAppearance(_sldHintOpacity.Value, _sldHintScale.Value);
             _keymapOverlay.SetProfile(_activeProfile);
             _keymapOverlay.SetEditMode(false);
             if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
 
-            AppendLog(string.Format("[키 매핑] 활성화 완료! (프로파일: {0} / 시점 토글: {1})",
-                _activeProfile.Name, KeyNameHelper.GetName(_activeProfile.CameraToggleVk)));
+            if (kbAssistOnly)
+                AppendLog(string.Format("[키 매핑] 게임패드 키보드 보조 매핑 활성화! (프로파일: {0} · 마우스/시점 제외)", _activeProfile.Name));
+            else
+                AppendLog(string.Format("[키 매핑] 활성화 완료! (프로파일: {0} / 시점 토글: {1})",
+                    _activeProfile.Name, KeyNameHelper.GetName(_activeProfile.CameraToggleVk)));
             UpdateUiStates();
         }
 
@@ -3285,10 +3425,13 @@ namespace ScrcpyLauncher
                 };
                 btnDoneGroup.Click += (s, e) =>
                 {
+                    int doneCnt = capturedPlan.Quests.Count;
                     foreach (var q in capturedPlan.Quests)
                         _scannedQuests.Remove(q);
+                    IncrementDailyQuestCleared(doneCnt);
                     RefreshQuestPlannerUi();
-                    AppendLog(string.Format("[퀘스트] {0} 완료 처리! (남은 퀘스트: {1}/10)", capturedPlan.Header, _scannedQuests.Count));
+                    AppendLog(string.Format("[퀘스트] {0} 완료 처리! (+{1}건 · 오늘 누적 {2}건 · 남은 퀘스트: {3}/10)",
+                        capturedPlan.Header, doneCnt, _settings.DailyQuestClearedCount, _scannedQuests.Count));
                 };
                 Grid.SetColumn(btnDoneGroup, 1);
                 hdrGrid.Children.Add(btnDoneGroup);
@@ -3359,6 +3502,7 @@ namespace ScrcpyLauncher
                     btnDoneOne.Click += (s, e) =>
                     {
                         _scannedQuests.Remove(capturedQ);
+                        IncrementDailyQuestCleared(1);
                         RefreshQuestPlannerUi();
                     };
                     Grid.SetColumn(btnDoneOne, 1);
@@ -3372,6 +3516,58 @@ namespace ScrcpyLauncher
                 card.Child = outerGrid;
                 _pnlQuestPlans.Children.Add(card);
             }
+        }
+
+        private void ApplyAlwaysOnTopLive(bool top)
+        {
+            try
+            {
+                if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                {
+                    _scrcpyProcess.Refresh();
+                    IntPtr hwnd = _scrcpyProcess.MainWindowHandle;
+                    if (hwnd != IntPtr.Zero)
+                    {
+                        SetWindowPos(hwnd, top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private string GetDailyQuestDateKey()
+        {
+            // Monster Hunter Outlanders daily reset is 05:00 AM KST (UTC+9 - 5h = UTC+4)
+            return DateTime.UtcNow.AddHours(4).ToString("yyyy-MM-dd");
+        }
+
+        private void EnsureDailyQuestReset()
+        {
+            if (_settings == null) return;
+            string todayKey = GetDailyQuestDateKey();
+            if (_settings.DailyQuestDateKey != todayKey)
+            {
+                _settings.DailyQuestDateKey = todayKey;
+                _settings.DailyQuestClearedCount = 0;
+                _settings.Save();
+            }
+        }
+
+        private void IncrementDailyQuestCleared(int delta)
+        {
+            if (_settings == null || delta <= 0) return;
+            EnsureDailyQuestReset();
+            _settings.DailyQuestClearedCount += delta;
+            _settings.Save();
+            UpdateDailyQuestCounterUi();
+        }
+
+        private void UpdateDailyQuestCounterUi()
+        {
+            if (_txtQuestDaily == null || _settings == null) return;
+            EnsureDailyQuestReset();
+            _txtQuestDaily.Text = string.Format("오늘 완료: {0}건", _settings.DailyQuestClearedCount);
         }
 
         private void StopScrcpy()
@@ -3428,7 +3624,11 @@ namespace ScrcpyLauncher
             _chkLowLatency.IsChecked = _settings.LowLatency;
             _chkNoAudio.IsChecked = _settings.NoAudio;
             _chkFullscreen.IsChecked = _settings.Fullscreen;
+            _chkAlwaysOnTop.IsChecked = _settings.AlwaysOnTop;
             _chkPrintFps.IsChecked = _settings.PrintFps;
+            _chkGamepadKbAssist.IsChecked = _settings.GamepadKeyboardAssist;
+            EnsureDailyQuestReset();
+            UpdateDailyQuestCounterUi();
 
             _txtRecordFolder.Text = string.IsNullOrWhiteSpace(_settings.RecordFolder)
                 ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "recordings")
@@ -3476,7 +3676,9 @@ namespace ScrcpyLauncher
             _settings.LowLatency = _chkLowLatency.IsChecked == true;
             _settings.NoAudio = _chkNoAudio.IsChecked == true;
             _settings.Fullscreen = _chkFullscreen.IsChecked == true;
+            _settings.AlwaysOnTop = _chkAlwaysOnTop.IsChecked == true;
             _settings.PrintFps = _chkPrintFps.IsChecked == true;
+            _settings.GamepadKeyboardAssist = _chkGamepadKbAssist.IsChecked == true;
             _settings.RecordFolder = _txtRecordFolder.Text.Trim();
             _settings.UseVirtualDisplay = _chkVirtualDisplay.IsChecked == true;
             _settings.VirtualDisplaySpec = _cmbVdSpec.Text.Trim();

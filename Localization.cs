@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "Scrcpy Launcher v1.5.3 — Android 미러링", "Scrcpy Launcher v1.5.3 — Android Mirroring", "Scrcpy Launcher v1.5.3 — Android ミラーリング");
+            A("win_title", "Scrcpy Launcher v1.5.4 — Android 미러링", "Scrcpy Launcher v1.5.4 — Android Mirroring", "Scrcpy Launcher v1.5.4 — Android ミラーリング");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -118,6 +118,8 @@ namespace ScrcpyLauncher
             A("chk_low_latency", "저지연 인코딩", "Low Latency", "低遅延エンコード");
             A("chk_no_audio", "소리 끄기", "Mute Audio", "音声オフ");
             A("chk_fullscreen", "전체화면 시작 (-f)", "Start Fullscreen (-f)", "フルスクリーン起動 (-f)");
+            A("chk_always_on_top", "항상 위에 (실시간)", "Always on Top", "常に手前に表示");
+            A("chk_gamepad_kb_assist", "게임패드 모드에서도 키보드 보조 매핑 사용 (모험단 춤 방향키 등 · 마우스 시점 제외)", "Enable keyboard assist mapping in Gamepad mode (no mouse/camera)", "ゲームパッドモードでもキーボード補助マッピングを使用 (マウス視点除外)");
             A("chk_fps_overlay", "화면 FPS 오버레이", "FPS Overlay", "FPS オーバーレイ");
             A("lbl_rec_folder", "캡처 · 녹화 저장 폴더", "Capture / Record Folder", "スクショ・録画保存先");
             A("btn_browse", "폴더 선택", "Browse", "選択");
@@ -268,6 +270,7 @@ namespace ScrcpyLauncher
                 "• F1  :  키 매핑 화면 힌트 켜기 / 끄기\n" +
                 "• F2  :  채팅 모드 토글 (키 매핑 일시정지 · 한글 타자 가능)\n" +
                 "• F8  :  현재 퀘스트 화면 수집 (퀘스트 플래너 · 전 모드 지원)\n" +
+                "• F12 / Xbox Share  :  즉시 화면 캡처 (.png)\n" +
                 "• Ctrl + F1 ~ F9  :  무기별 프로파일 즉시 전환\n" +
                 "• Alt + F  :  전체화면 전환\n" +
                 "• Alt + O  /  Alt + Shift + O  :  폰 화면 끄기 / 켜기\n" +
@@ -279,6 +282,8 @@ namespace ScrcpyLauncher
                 "• Alt  :  Toggle Mouse Camera Look ON / OFF\n" +
                 "• F1  :  Toggle On-Screen Key Hints\n" +
                 "• F2  :  Toggle Chat / Typing Mode (Pause / Resume Keymap)\n" +
+                "• F8  :  Scan Current Quest (Quest Planner)\n" +
+                "• F12 / Xbox Share  :  Instant Screenshot (.png)\n" +
                 "• Ctrl + F1 ~ F9  :  Instant Profile Switch (Per-Weapon)\n" +
                 "• Alt + F  :  Toggle Fullscreen\n" +
                 "• Alt + O  /  Alt + Shift + O  :  Turn Phone Screen Off / On\n" +
@@ -290,6 +295,8 @@ namespace ScrcpyLauncher
                 "• Alt  :  マウス視点操作モード ON / OFF\n" +
                 "• F1  :  画面キーヒント 表示 / 非表示\n" +
                 "• F2  :  チャットモード切替 (キーマッピング一時停止・文字入力)\n" +
+                "• F8  :  現在のクエストをスキャン (クエストプランナー)\n" +
+                "• F12 / Xbox Share  :  即時スクリーンショット (.png)\n" +
                 "• Ctrl + F1 ~ F9  :  武器別プロファイル即時切替\n" +
                 "• Alt + F  :  フルスクリーン切替\n" +
                 "• Alt + O  /  Alt + Shift + O  :  端末画面オフ / オン\n" +

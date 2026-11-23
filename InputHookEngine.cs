@@ -30,6 +30,7 @@ namespace ScrcpyLauncher
         private int _camAccumDx = 0;
         private int _camAccumDy = 0;
         private DateTime _lastCamMotionUtc = DateTime.MinValue;
+        private DateTime _camSuppressUntilUtc = DateTime.MinValue;
         private int _centerScreenX = 0;
         private int _centerScreenY = 0;
         private int _videoWidth = 0;
@@ -64,7 +65,7 @@ namespace ScrcpyLauncher
         private DateTime _joyMoveStartedUtc = DateTime.MinValue;
         private DateTime _joyLastKeepAliveUtc = DateTime.MinValue;
         private int _joyKeepAliveToggle = 0;
-        private const double JoySmoothMs = 50.0;
+        private const double JoySmoothMs = 30.0;
 
         // Action keys currently held down (bind -> pointerId)
         private readonly Dictionary<KeyBindItem, long> _heldKeys = new Dictionary<KeyBindItem, long>();
@@ -91,6 +92,7 @@ namespace ScrcpyLauncher
         public event Action<bool> PauseToggled;
 
         public bool IsPaused { get { return _isPaused; } }
+        public bool KeyboardOnlyAssist { get; set; }
 
         private const int WH_KEYBOARD_LL = 13;
         private const int WH_MOUSE_LL = 14;
@@ -302,14 +304,22 @@ namespace ScrcpyLauncher
                     _client.InjectTouch(2, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
                 }
 
-                // 2. Flush accumulated mouse camera delta at smooth ~125Hz (paused while wheel-dragging)
+                // 2. Flush accumulated mouse camera delta at smooth ~125Hz (paused while wheel-dragging or gathering cooldown)
                 if (_cameraLocked && _wheelTouchId == 0 && (_camAccumDx != 0 || _camAccumDy != 0))
                 {
-                    int adx = _camAccumDx;
-                    int ady = _camAccumDy;
-                    _camAccumDx = 0;
-                    _camAccumDy = 0;
-                    FlushCameraDeltaLocked(adx, ady, now);
+                    if (now < _camSuppressUntilUtc)
+                    {
+                        _camAccumDx = 0;
+                        _camAccumDy = 0;
+                    }
+                    else
+                    {
+                        int adx = _camAccumDx;
+                        int ady = _camAccumDy;
+                        _camAccumDx = 0;
+                        _camAccumDy = 0;
+                        FlushCameraDeltaLocked(adx, ady, now);
+                    }
                 }
 
                 // 2. Smooth 50ms joystick interpolation + 30Hz keep-alive while held (fixes solo WASD in normal mode!)
@@ -564,9 +574,8 @@ namespace ScrcpyLauncher
                             return (IntPtr)1;
                         }
 
-                        // Camera toggle key (e.g. Alt): pass Alt through to Windows/scrcpy so Alt+Tab and Alt+F/O/I work natively!
-                        // Toggle camera lock ONLY when Alt is tapped and released alone without pressing another key.
-                        if (_profile.EnableMouseCamera && vk == NormalizeVk(_profile.CameraToggleVk))
+                        // Camera toggle key (e.g. Alt): disabled in KeyboardOnlyAssist (gamepad hybrid) mode
+                        if (!KeyboardOnlyAssist && _profile.EnableMouseCamera && vk == NormalizeVk(_profile.CameraToggleVk))
                         {
                             if (isDown)
                             {
@@ -690,6 +699,16 @@ namespace ScrcpyLauncher
                                     {
                                         if (!_heldKeys.ContainsKey(matched))
                                         {
+                                            // Fix MHO gathering camera lock: pressing F (interact/gather) while rotating camera
+                                            // causes the game to ignore the active camera touch finger. Lift the virtual camera finger
+                                            // cleanly for 250ms on initial press so the next mouse movement starts a fresh touch ID!
+                                            if (vk == 70 && _cameraLocked)
+                                            {
+                                                StopCameraFingerLocked();
+                                                _camAccumDx = 0;
+                                                _camAccumDy = 0;
+                                                _camSuppressUntilUtc = DateTime.UtcNow.AddMilliseconds(250);
+                                            }
                                             long id = _nextTouchId++;
                                             _heldKeys[matched] = id;
                                             _client.InjectTouch(0, id, matched.X, matched.Y);
@@ -751,6 +770,14 @@ namespace ScrcpyLauncher
                 _joyFirstTargetX = tx;
                 _joyFirstTargetY = ty;
                 _client.InjectTouch(0, _joyTouchId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
+                // Immediate 35% directional nudge right after DOWN so quick WASD taps & direction switches never drop!
+                double initX = _joyCurX + (tx - _joyCurX) * 0.35;
+                double initY = _joyCurY + (ty - _joyCurY) * 0.35;
+                _joyCurX = initX;
+                _joyCurY = initY;
+                _joyHasMoved = true;
+                _joyLastKeepAliveUtc = DateTime.UtcNow;
+                _client.InjectTouch(2, _joyTouchId, (int)Math.Round(initX), (int)Math.Round(initY));
             }
 
             if (!starting && Math.Abs(_joyTargetX - tx) < 1 && Math.Abs(_joyTargetY - ty) < 1)
@@ -839,6 +866,9 @@ namespace ScrcpyLauncher
 
         private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
+            if (KeyboardOnlyAssist)
+                return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+
             if (nCode >= 0 && _active && _profile != null && _client.IsConnected && _targetHwnd != IntPtr.Zero)
             {
                 int msg = wParam.ToInt32();

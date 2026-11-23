@@ -86,9 +86,11 @@ namespace ScrcpyLauncher
         public bool LowLatency { get; set; }
         public bool NoAudio { get; set; }
         public bool Fullscreen { get; set; }
+        public bool AlwaysOnTop { get; set; }
         public bool PrintFps { get; set; }
         public bool DisableRightClickBack { get; set; }
         public bool KeymapExclusiveInput { get; set; }
+        public bool GamepadKeyboardAssist { get; set; }
         public bool UseVirtualDisplay { get; set; }
         public string VirtualDisplaySpec { get; set; }
         public bool NoVdSystemDecorations { get; set; }
@@ -97,6 +99,8 @@ namespace ScrcpyLauncher
         public double OverlayOpacity { get; set; }
         public double OverlayScale { get; set; }
         public string Language { get; set; }
+        public int DailyQuestClearedCount { get; set; }
+        public string DailyQuestDateKey { get; set; }
 
         public LauncherSettings()
         {
@@ -115,9 +119,11 @@ namespace ScrcpyLauncher
             LowLatency = true;
             NoAudio = false;
             Fullscreen = false;
+            AlwaysOnTop = false;
             PrintFps = true;
             DisableRightClickBack = true;
             KeymapExclusiveInput = true;
+            GamepadKeyboardAssist = false;
             UseVirtualDisplay = true;
             VirtualDisplaySpec = "1920x1080/280";
             NoVdSystemDecorations = true;
@@ -126,6 +132,8 @@ namespace ScrcpyLauncher
             OverlayOpacity = 1.0;
             OverlayScale = 1.0;
             Language = "";
+            DailyQuestClearedCount = 0;
+            DailyQuestDateKey = "";
         }
 
         public static string GetSettingsPath()
