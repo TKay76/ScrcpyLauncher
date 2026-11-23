@@ -123,6 +123,7 @@ namespace ScrcpyLauncher
         private bool _questHotKeyRegistered = false;
         private bool _screenshotHotKeyRegistered = false;
         private bool _isCapturingScreenshot = false;
+        private bool _isConnectingKeymap = false;
         private DateTime _lastShareShotUtc = DateTime.MinValue;
         private const uint RID_INPUT = 0x10000003;
         private const uint RIDEV_INPUTSINK = 0x00000100;
@@ -621,7 +622,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.5.6' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.5.7' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -893,7 +894,7 @@ namespace ScrcpyLauncher
               <TextBlock x:Name='txtKmSec2' Text='멀티터치 조작 · 시점 회전 설정' Style='{StaticResource SectionTitle}'/>
             </StackPanel>
             <WrapPanel Margin='2,0,0,8'>
-              <CheckBox x:Name='chkKmJoy' Content='WASD 이동'/>
+              <CheckBox x:Name='chkKmJoy' Content='WASD + Shift 질주'/>
               <CheckBox x:Name='chkKmCam' Content='마우스 시점 회전'/>
               <CheckBox x:Name='chkKmLeft' Content='좌클릭 공격'/>
               <CheckBox x:Name='chkKmRight' Content='우클릭 보조'/>
@@ -2966,62 +2967,72 @@ namespace ScrcpyLauncher
 
         private async void BtnKmStart_Click(object sender, RoutedEventArgs e)
         {
+            if (_isConnectingKeymap) return;
             var dev = _cmbDevices.SelectedItem as DeviceInfo;
             if (dev == null || dev.State != "device" || _scrcpyProcess == null || _scrcpyProcess.HasExited)
             {
-                MessageBox.Show("먼저 [연결 및 영상] 탭에서 미러링을 시작해 주세요.", "안내", MessageBoxButton.OK, MessageBoxImage.Information);
+                if (sender != null)
+                    MessageBox.Show("먼저 [연결 및 영상] 탭에서 미러링을 시작해 주세요.", "안내", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
             if (_activeProfile == null) return;
 
-            SyncProfileFromUi();
-            _btnKmStart.IsEnabled = false;
-            AppendLog("[키 매핑] 멀티터치 제어 소켓 연결 중...");
-
-            var res = await _controlClient.ConnectAsync(dev.Serial, _detectedScrcpyVersion, _activeDisplayId, _activeDisplayWidth, _activeDisplayHeight);
-            AppendLog("[키 매핑] " + res.Item2);
-            if (!res.Item1)
+            _isConnectingKeymap = true;
+            try
             {
-                UpdateUiStates();
-                return;
-            }
+                SyncProfileFromUi();
+                _btnKmStart.IsEnabled = false;
+                AppendLog("[키 매핑] 멀티터치 제어 소켓 연결 중...");
 
-            _scrcpyProcess.Refresh();
-            bool kbAssistOnly = (GetControlMode() == "gamepad");
-            if (kbAssistOnly && _activeProfile != null && _activeProfile.IsBuiltIn && _activeProfile.EnableJoystick)
-            {
-                for (int i = 0; i < _keymapProfiles.Count; i++)
+                var res = await _controlClient.ConnectAsync(dev.Serial, _detectedScrcpyVersion, _activeDisplayId, _activeDisplayWidth, _activeDisplayHeight);
+                AppendLog("[키 매핑] " + res.Item2);
+                if (!res.Item1)
+                    return;
+
+                if (_scrcpyProcess == null || _scrcpyProcess.HasExited)
+                    return;
+
+                _scrcpyProcess.Refresh();
+                bool kbAssistOnly = (GetControlMode() == "gamepad");
+                if (kbAssistOnly && _activeProfile != null && _activeProfile.IsBuiltIn && _activeProfile.EnableJoystick)
                 {
-                    if (_keymapProfiles[i].Name.Contains("게임패드 보조"))
+                    for (int i = 0; i < _keymapProfiles.Count; i++)
                     {
-                        _cmbKeyProfiles.SelectedIndex = i;
-                        _activeProfile = _keymapProfiles[i];
-                        break;
+                        if (_keymapProfiles[i].Name.Contains("게임패드 보조"))
+                        {
+                            _cmbKeyProfiles.SelectedIndex = i;
+                            _activeProfile = _keymapProfiles[i];
+                            break;
+                        }
                     }
                 }
-            }
-            _hookEngine.KeyboardOnlyAssist = kbAssistOnly;
-            _hookEngine.SetProfile(_activeProfile);
-            _hookEngine.SetTargetWindow(_scrcpyProcess.MainWindowHandle);
-            _hookEngine.Start();
+                _hookEngine.KeyboardOnlyAssist = kbAssistOnly;
+                _hookEngine.SetProfile(_activeProfile);
+                _hookEngine.SetTargetWindow(_scrcpyProcess.MainWindowHandle);
+                _hookEngine.Start();
 
-            if (_keymapOverlay == null)
+                if (_keymapOverlay == null)
+                {
+                    _keymapOverlay = new KeymapOverlayWindow();
+                    _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
+                }
+                _keymapOverlay.SetShowHints(_chkKmHints.IsChecked == true);
+                _keymapOverlay.SetHintAppearance(_sldHintOpacity.Value, _sldHintScale.Value);
+                _keymapOverlay.SetProfile(_activeProfile);
+                _keymapOverlay.SetEditMode(false);
+                if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
+
+                if (kbAssistOnly)
+                    AppendLog(string.Format("[키 매핑] 게임패드 키보드 보조 매핑 활성화! (프로파일: {0} · WASD/마우스 제외)", _activeProfile.Name));
+                else
+                    AppendLog(string.Format("[키 매핑] 활성화 완료! (프로파일: {0} / 시점 토글: {1})",
+                        _activeProfile.Name, KeyNameHelper.GetName(_activeProfile.CameraToggleVk)));
+            }
+            finally
             {
-                _keymapOverlay = new KeymapOverlayWindow();
-                _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
+                _isConnectingKeymap = false;
+                UpdateUiStates();
             }
-            _keymapOverlay.SetShowHints(_chkKmHints.IsChecked == true);
-            _keymapOverlay.SetHintAppearance(_sldHintOpacity.Value, _sldHintScale.Value);
-            _keymapOverlay.SetProfile(_activeProfile);
-            _keymapOverlay.SetEditMode(false);
-            if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
-
-            if (kbAssistOnly)
-                AppendLog(string.Format("[키 매핑] 게임패드 키보드 보조 매핑 활성화! (프로파일: {0} · WASD/마우스 제외)", _activeProfile.Name));
-            else
-                AppendLog(string.Format("[키 매핑] 활성화 완료! (프로파일: {0} / 시점 토글: {1})",
-                    _activeProfile.Name, KeyNameHelper.GetName(_activeProfile.CameraToggleVk)));
-            UpdateUiStates();
         }
 
         private void StopKeymap()

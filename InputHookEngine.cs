@@ -53,8 +53,8 @@ namespace ScrcpyLauncher
         private int _manualLastX = 5000;
         private int _manualLastY = 5000;
 
-        // Joystick state (high-precision 8ms tick + SOCD last-input-priority)
-        private bool _joyUp, _joyDown, _joyLeft, _joyRight;
+        // Joystick state (high-precision 8ms tick + SOCD last-input-priority + Shift sprint)
+        private bool _joyUp, _joyDown, _joyLeft, _joyRight, _joySprint;
         private int _joyLastHoriz = 0; // -1 = Left, +1 = Right
         private int _joyLastVert = 0;  // -1 = Up,   +1 = Down
         private long _joyTouchId = 0;
@@ -489,7 +489,7 @@ namespace ScrcpyLauncher
                 }
                 _joyMoving = false;
                 _joyHasMoved = false;
-                _joyUp = _joyDown = _joyLeft = _joyRight = false;
+                _joyUp = _joyDown = _joyLeft = _joyRight = _joySprint = false;
                 _joyLastHoriz = 0;
                 _joyLastVert = 0;
 
@@ -627,10 +627,25 @@ namespace ScrcpyLauncher
                             return CallNextHookEx(_kbHook, nCode, wParam, lParam);
                         }
 
-                        // WASD virtual joystick (disabled in Gamepad KeyboardOnlyAssist mode; Shift removed from joystick so Shift is free for action/combo binds!)
+                        // WASD + Shift sprint virtual joystick (disabled in Gamepad KeyboardOnlyAssist mode)
                         // Also allow Ctrl/Alt+WASD combos to pass through without being hijacked by joystick (still release already-held keys on isUp).
                         if (!KeyboardOnlyAssist && _profile.EnableJoystick)
                         {
+                            // Shift sprint: update _joySprint unless user explicitly mapped Shift itself as a plain action key
+                            if (_profile.SprintVk > 0 && vk == NormalizeVk(_profile.SprintVk) && FindMatchingBind(vk, 0) == null)
+                            {
+                                lock (_stateLock)
+                                {
+                                    if (_joySprint != isDown)
+                                    {
+                                        _joySprint = isDown;
+                                        if (_joyTouchId != 0)
+                                            UpdateJoystickLocked(isUp);
+                                    }
+                                }
+                                // Let Shift pass through so Shift+Key combos & Alt+Shift+O continue working natively!
+                            }
+
                             bool isJoyKey = (vk == NormalizeVk(_profile.JoyUpVk) || vk == NormalizeVk(_profile.JoyDownVk) ||
                                              vk == NormalizeVk(_profile.JoyLeftVk) || vk == NormalizeVk(_profile.JoyRightVk));
                             if (isJoyKey && (isUp || (curMods & 5) == 0))
@@ -812,7 +827,8 @@ namespace ScrcpyLauncher
             }
 
             double len = Math.Sqrt(dx * dx + dy * dy);
-            double rad = _profile.JoyRadius;
+            double scale = _joySprint && _profile.SprintScale > 1.0 ? _profile.SprintScale : 1.0;
+            double rad = _profile.JoyRadius * scale;
 
             double tx = Math.Max(100, Math.Min(9900, _profile.JoyX + (dx / len) * rad));
             double ty = Math.Max(100, Math.Min(9900, _profile.JoyY + (dy / len) * rad * 1.778));

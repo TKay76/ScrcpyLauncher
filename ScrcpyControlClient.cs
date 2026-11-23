@@ -262,15 +262,6 @@ namespace ScrcpyLauncher
             catch { }
         }
 
-        public void EnqueueTinyDelay()
-        {
-            var q = _sendQueue;
-            if (_running && q != null && !q.IsAddingCompleted)
-            {
-                try { q.TryAdd(new byte[] { 0xFF }); } catch { }
-            }
-        }
-
         // action: 0 = ACTION_DOWN, 1 = ACTION_UP, 2 = ACTION_MOVE
         public void InjectTouch(byte action, long pointerId, int normX, int normY)
         {
@@ -340,8 +331,13 @@ namespace ScrcpyLauncher
         public void Disconnect()
         {
             _running = false;
-            try { if (_sendQueue != null) _sendQueue.CompleteAdding(); } catch { }
+            var oldQueue = _sendQueue;
             _sendQueue = null;
+            if (oldQueue != null)
+            {
+                try { oldQueue.CompleteAdding(); } catch { }
+                try { oldQueue.Dispose(); } catch { }
+            }
             lock (_sendLock)
             {
                 try { if (_ctrlStream != null) _ctrlStream.Dispose(); } catch { }

@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "Scrcpy Launcher v1.5.6 — Android 미러링", "Scrcpy Launcher v1.5.6 — Android Mirroring", "Scrcpy Launcher v1.5.6 — Android ミラーリング");
+            A("win_title", "Scrcpy Launcher v1.5.7 — Android 미러링", "Scrcpy Launcher v1.5.7 — Android Mirroring", "Scrcpy Launcher v1.5.7 — Android ミラーリング");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -147,7 +147,7 @@ namespace ScrcpyLauncher
             A("lbl_hotkey_hint", "게임 중 Ctrl+F1~F9 전환", "In-game: Ctrl+F1~F9", "ゲーム中 Ctrl+F1~F9 切替");
 
             A("km_sec2", "멀티터치 조작 · 시점 회전 설정", "Multi-Touch Controls · Camera Look", "マルチタッチ操作・カメラ設定");
-            A("chk_km_joy", "WASD 이동", "WASD Movement", "WASD 移動");
+            A("chk_km_joy", "WASD + Shift 질주", "WASD + Shift Sprint", "WASD + Shift ダッシュ");
             A("chk_km_cam", "마우스 시점 회전", "Mouse Camera Look", "マウス視点操作");
             A("chk_km_left", "좌클릭 공격", "Left-Click Action", "左クリック攻撃");
             A("chk_km_right", "우클릭 보조", "Right-Click Action", "右クリック補助");
