@@ -214,6 +214,25 @@ namespace ScrcpyLauncher
             };
             list.Add(mhoSimple);
 
+            // 3. Gamepad Hybrid Assist — Arrow Keys Only (no WASD/mouse/alphabet keys hijacked)
+            var gpAssist = new KeymapProfile
+            {
+                Name = "[기본] 게임패드 보조 (방향키 전용)",
+                IsBuiltIn = true,
+                EnableJoystick = false,
+                EnableMouseCamera = false,
+                EnableLeftClick = false,
+                EnableRightClick = false,
+                Keys = new List<KeyBindItem>
+                {
+                    new KeyBindItem { VkCode = 37, Label = "방향키 ←", X = 7795, Y = 7094 },
+                    new KeyBindItem { VkCode = 38, Label = "방향키 ↑", X = 8580, Y = 5862 },
+                    new KeyBindItem { VkCode = 39, Label = "방향키 →", X = 9343, Y = 7396 },
+                    new KeyBindItem { VkCode = 40, Label = "방향키 ↓", X = 8608, Y = 8579 }
+                }
+            };
+            list.Add(gpAssist);
+
             return list;
         }
 

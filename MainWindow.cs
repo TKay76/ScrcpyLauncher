@@ -621,7 +621,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.5.5' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.5.6' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -893,7 +893,7 @@ namespace ScrcpyLauncher
               <TextBlock x:Name='txtKmSec2' Text='멀티터치 조작 · 시점 회전 설정' Style='{StaticResource SectionTitle}'/>
             </StackPanel>
             <WrapPanel Margin='2,0,0,8'>
-              <CheckBox x:Name='chkKmJoy' Content='WASD + Shift 질주'/>
+              <CheckBox x:Name='chkKmJoy' Content='WASD 이동'/>
               <CheckBox x:Name='chkKmCam' Content='마우스 시점 회전'/>
               <CheckBox x:Name='chkKmLeft' Content='좌클릭 공격'/>
               <CheckBox x:Name='chkKmRight' Content='우클릭 보조'/>
@@ -1484,8 +1484,33 @@ namespace ScrcpyLauncher
             _chkAlwaysOnTop.Unchecked += (s, e) => { if (!_isInitializing) ApplyAlwaysOnTopLive(false); onOptChanged(); };
             _chkPrintFps.Checked += (s, e) => onOptChanged();
             _chkPrintFps.Unchecked += (s, e) => onOptChanged();
-            _chkGamepadKbAssist.Checked += (s, e) => { if (!_isInitializing) { _settings.GamepadKeyboardAssist = true; _settings.Save(); } };
-            _chkGamepadKbAssist.Unchecked += (s, e) => { if (!_isInitializing) { _settings.GamepadKeyboardAssist = false; _settings.Save(); } };
+            _chkGamepadKbAssist.Checked += (s, e) =>
+            {
+                if (_isInitializing) return;
+                _settings.GamepadKeyboardAssist = true;
+                _settings.Save();
+                if (_activeProfile != null && _activeProfile.IsBuiltIn && _activeProfile.EnableJoystick)
+                {
+                    for (int i = 0; i < _keymapProfiles.Count; i++)
+                    {
+                        if (_keymapProfiles[i].Name.Contains("게임패드 보조"))
+                        {
+                            _cmbKeyProfiles.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+                if (GetControlMode() == "gamepad" && _scrcpyProcess != null && !_scrcpyProcess.HasExited && _hookEngine != null && !_hookEngine.IsActive)
+                    BtnKmStart_Click(null, null);
+            };
+            _chkGamepadKbAssist.Unchecked += (s, e) =>
+            {
+                if (_isInitializing) return;
+                _settings.GamepadKeyboardAssist = false;
+                _settings.Save();
+                if (GetControlMode() == "gamepad" && _hookEngine != null && _hookEngine.IsActive)
+                    StopKeymap();
+            };
 
             _chkVirtualDisplay.Checked += (s, e) => onOptChanged();
             _chkVirtualDisplay.Unchecked += (s, e) => onOptChanged();
@@ -2963,6 +2988,18 @@ namespace ScrcpyLauncher
 
             _scrcpyProcess.Refresh();
             bool kbAssistOnly = (GetControlMode() == "gamepad");
+            if (kbAssistOnly && _activeProfile != null && _activeProfile.IsBuiltIn && _activeProfile.EnableJoystick)
+            {
+                for (int i = 0; i < _keymapProfiles.Count; i++)
+                {
+                    if (_keymapProfiles[i].Name.Contains("게임패드 보조"))
+                    {
+                        _cmbKeyProfiles.SelectedIndex = i;
+                        _activeProfile = _keymapProfiles[i];
+                        break;
+                    }
+                }
+            }
             _hookEngine.KeyboardOnlyAssist = kbAssistOnly;
             _hookEngine.SetProfile(_activeProfile);
             _hookEngine.SetTargetWindow(_scrcpyProcess.MainWindowHandle);
@@ -2973,14 +3010,14 @@ namespace ScrcpyLauncher
                 _keymapOverlay = new KeymapOverlayWindow();
                 _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
             }
-            _keymapOverlay.SetShowHints(!kbAssistOnly && _chkKmHints.IsChecked == true);
+            _keymapOverlay.SetShowHints(_chkKmHints.IsChecked == true);
             _keymapOverlay.SetHintAppearance(_sldHintOpacity.Value, _sldHintScale.Value);
             _keymapOverlay.SetProfile(_activeProfile);
             _keymapOverlay.SetEditMode(false);
             if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
 
             if (kbAssistOnly)
-                AppendLog(string.Format("[키 매핑] 게임패드 키보드 보조 매핑 활성화! (프로파일: {0} · 마우스/시점 제외)", _activeProfile.Name));
+                AppendLog(string.Format("[키 매핑] 게임패드 키보드 보조 매핑 활성화! (프로파일: {0} · WASD/마우스 제외)", _activeProfile.Name));
             else
                 AppendLog(string.Format("[키 매핑] 활성화 완료! (프로파일: {0} / 시점 토글: {1})",
                     _activeProfile.Name, KeyNameHelper.GetName(_activeProfile.CameraToggleVk)));

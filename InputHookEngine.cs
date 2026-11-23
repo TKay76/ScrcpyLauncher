@@ -53,8 +53,10 @@ namespace ScrcpyLauncher
         private int _manualLastX = 5000;
         private int _manualLastY = 5000;
 
-        // Joystick state (50ms smooth interpolation)
-        private bool _joyUp, _joyDown, _joyLeft, _joyRight, _joySprint;
+        // Joystick state (high-precision 8ms tick + SOCD last-input-priority)
+        private bool _joyUp, _joyDown, _joyLeft, _joyRight;
+        private int _joyLastHoriz = 0; // -1 = Left, +1 = Right
+        private int _joyLastVert = 0;  // -1 = Up,   +1 = Down
         private long _joyTouchId = 0;
         private double _joyCurX, _joyCurY;
         private double _joyFromX, _joyFromY;
@@ -65,7 +67,8 @@ namespace ScrcpyLauncher
         private DateTime _joyMoveStartedUtc = DateTime.MinValue;
         private DateTime _joyLastKeepAliveUtc = DateTime.MinValue;
         private int _joyKeepAliveToggle = 0;
-        private const double JoySmoothMs = 30.0;
+        private const double JoySmoothMs = 24.0;
+        private bool _hiResTimerActive = false;
 
         // Action keys currently held down (bind -> pointerId)
         private readonly Dictionary<KeyBindItem, long> _heldKeys = new Dictionary<KeyBindItem, long>();
@@ -184,6 +187,12 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int vKey);
 
+        [DllImport("winmm.dll")]
+        private static extern uint timeBeginPeriod(uint uPeriod);
+
+        [DllImport("winmm.dll")]
+        private static extern uint timeEndPeriod(uint uPeriod);
+
         private static int GetCurrentModifiers()
         {
             int m = 0;
@@ -252,6 +261,10 @@ namespace ScrcpyLauncher
                 _kbHook = SetWindowsHookEx(WH_KEYBOARD_LL, _kbProc, hMod, 0);
                 _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseProc, hMod, 0);
             }
+            if (!_hiResTimerActive)
+            {
+                try { timeBeginPeriod(1); _hiResTimerActive = true; } catch { }
+            }
             _active = true;
             _tickTimer = new System.Threading.Timer(EngineTick, null, 8, 8);
         }
@@ -265,6 +278,11 @@ namespace ScrcpyLauncher
             {
                 _tickTimer.Dispose();
                 _tickTimer = null;
+            }
+            if (_hiResTimerActive)
+            {
+                try { timeEndPeriod(1); } catch { }
+                _hiResTimerActive = false;
             }
             SetCameraLock(false);
             ReleaseAllInputs();
@@ -471,7 +489,9 @@ namespace ScrcpyLauncher
                 }
                 _joyMoving = false;
                 _joyHasMoved = false;
-                _joyUp = _joyDown = _joyLeft = _joyRight = _joySprint = false;
+                _joyUp = _joyDown = _joyLeft = _joyRight = false;
+                _joyLastHoriz = 0;
+                _joyLastVert = 0;
 
                 StopCameraFingerLocked();
 
@@ -607,22 +627,53 @@ namespace ScrcpyLauncher
                             return CallNextHookEx(_kbHook, nCode, wParam, lParam);
                         }
 
-                        if (_profile.EnableJoystick)
+                        // WASD virtual joystick (disabled in Gamepad KeyboardOnlyAssist mode; Shift removed from joystick so Shift is free for action/combo binds!)
+                        // Also allow Ctrl/Alt+WASD combos to pass through without being hijacked by joystick (still release already-held keys on isUp).
+                        if (!KeyboardOnlyAssist && _profile.EnableJoystick)
                         {
-                            bool joyHit = false;
-                            bool changed = false;
-                            lock (_stateLock)
+                            bool isJoyKey = (vk == NormalizeVk(_profile.JoyUpVk) || vk == NormalizeVk(_profile.JoyDownVk) ||
+                                             vk == NormalizeVk(_profile.JoyLeftVk) || vk == NormalizeVk(_profile.JoyRightVk));
+                            if (isJoyKey && (isUp || (curMods & 5) == 0))
                             {
-                                if (vk == NormalizeVk(_profile.JoyUpVk)) { changed = (_joyUp != isDown); _joyUp = isDown; joyHit = true; }
-                                else if (vk == NormalizeVk(_profile.JoyDownVk)) { changed = (_joyDown != isDown); _joyDown = isDown; joyHit = true; }
-                                else if (vk == NormalizeVk(_profile.JoyLeftVk)) { changed = (_joyLeft != isDown); _joyLeft = isDown; joyHit = true; }
-                                else if (vk == NormalizeVk(_profile.JoyRightVk)) { changed = (_joyRight != isDown); _joyRight = isDown; joyHit = true; }
-                                else if (_profile.SprintVk > 0 && vk == NormalizeVk(_profile.SprintVk)) { changed = (_joySprint != isDown); _joySprint = isDown; joyHit = true; }
+                                bool joyHit = false;
+                                bool changed = false;
+                                lock (_stateLock)
+                                {
+                                    if (vk == NormalizeVk(_profile.JoyUpVk))
+                                    {
+                                        changed = (_joyUp != isDown);
+                                        _joyUp = isDown;
+                                        if (isDown) _joyLastVert = -1;
+                                        joyHit = true;
+                                    }
+                                    else if (vk == NormalizeVk(_profile.JoyDownVk))
+                                    {
+                                        changed = (_joyDown != isDown);
+                                        _joyDown = isDown;
+                                        if (isDown) _joyLastVert = 1;
+                                        joyHit = true;
+                                    }
+                                    else if (vk == NormalizeVk(_profile.JoyLeftVk))
+                                    {
+                                        changed = (_joyLeft != isDown);
+                                        _joyLeft = isDown;
+                                        if (isDown) _joyLastHoriz = -1;
+                                        joyHit = true;
+                                    }
+                                    else if (vk == NormalizeVk(_profile.JoyRightVk))
+                                    {
+                                        changed = (_joyRight != isDown);
+                                        _joyRight = isDown;
+                                        if (isDown) _joyLastHoriz = 1;
+                                        joyHit = true;
+                                    }
 
-                                if (joyHit && changed)
-                                    UpdateJoystickLocked(isUp);
+                                    if (joyHit && changed)
+                                        UpdateJoystickLocked(isUp);
+                                }
+                                // Only swallow on DOWN (when no Ctrl/Alt) or on UP if it actually changed joystick state
+                                if (joyHit && (isDown || changed)) return (IntPtr)1;
                             }
-                            if (joyHit) return (IntPtr)1;
                         }
 
                         // On key UP, release any held action/wheel bind whose main VkCode matches (even if modifier was released first)
@@ -731,8 +782,16 @@ namespace ScrcpyLauncher
 
         private void UpdateJoystickLocked(bool keyReleased)
         {
-            int dx = (_joyRight ? 1 : 0) - (_joyLeft ? 1 : 0);
-            int dy = (_joyDown ? 1 : 0) - (_joyUp ? 1 : 0);
+            // SOCD (Last-Input-Priority): pressing D while A is still held switches immediately to +1 instead of cancelling to 0!
+            int dx = 0;
+            if (_joyLeft && _joyRight) dx = (_joyLastHoriz != 0) ? _joyLastHoriz : 1;
+            else if (_joyRight) dx = 1;
+            else if (_joyLeft) dx = -1;
+
+            int dy = 0;
+            if (_joyUp && _joyDown) dy = (_joyLastVert != 0) ? _joyLastVert : 1;
+            else if (_joyDown) dy = 1;
+            else if (_joyUp) dy = -1;
 
             if (dx == 0 && dy == 0)
             {
@@ -741,8 +800,7 @@ namespace ScrcpyLauncher
                 _joyMoving = false;
                 if (oldId != 0)
                 {
-                    bool anyHeld = _joyUp || _joyDown || _joyLeft || _joyRight;
-                    if (keyReleased && !anyHeld && !_joyHasMoved)
+                    if (keyReleased && !_joyHasMoved)
                     {
                         _joyCurX = _joyFirstTargetX;
                         _joyCurY = _joyFirstTargetY;
@@ -754,8 +812,7 @@ namespace ScrcpyLauncher
             }
 
             double len = Math.Sqrt(dx * dx + dy * dy);
-            double scale = _joySprint && _profile.SprintScale > 1.0 ? _profile.SprintScale : 1.0;
-            double rad = _profile.JoyRadius * scale;
+            double rad = _profile.JoyRadius;
 
             double tx = Math.Max(100, Math.Min(9900, _profile.JoyX + (dx / len) * rad));
             double ty = Math.Max(100, Math.Min(9900, _profile.JoyY + (dy / len) * rad * 1.778));
@@ -769,15 +826,9 @@ namespace ScrcpyLauncher
                 _joyHasMoved = false;
                 _joyFirstTargetX = tx;
                 _joyFirstTargetY = ty;
-                _client.InjectTouch(0, _joyTouchId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
-                // Immediate 35% directional nudge right after DOWN so quick WASD taps & direction switches never drop!
-                double initX = _joyCurX + (tx - _joyCurX) * 0.35;
-                double initY = _joyCurY + (ty - _joyCurY) * 0.35;
-                _joyCurX = initX;
-                _joyCurY = initY;
-                _joyHasMoved = true;
                 _joyLastKeepAliveUtc = DateTime.UtcNow;
-                _client.InjectTouch(2, _joyTouchId, (int)Math.Round(initX), (int)Math.Round(initY));
+                // Send clean ACTION_DOWN at joystick center; first 8ms EngineTick will push smoothly toward (tx, ty)
+                _client.InjectTouch(0, _joyTouchId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
             }
 
             if (!starting && Math.Abs(_joyTargetX - tx) < 1 && Math.Abs(_joyTargetY - ty) < 1)
