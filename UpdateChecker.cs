@@ -21,7 +21,7 @@ namespace ScrcpyLauncher
 
     public static class UpdateChecker
     {
-        public const string CurrentVersion = "1.5.4";
+        public const string CurrentVersion = "1.5.5";
         public const string RepoOwner = "TKay76";
         public const string RepoName = "ScrcpyLauncher";
         public const string ReleasesPageUrl = "https://github.com/TKay76/ScrcpyLauncher/releases";

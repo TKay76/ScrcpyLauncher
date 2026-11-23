@@ -254,18 +254,34 @@ namespace ScrcpyLauncher
             if (targetHwnd == IntPtr.Zero || IsIconic(targetHwnd))
                 return Tuple.Create<QuestEntry, string>(null, "미러링 창이 열려 있지 않습니다.");
 
-            Bitmap cropBmp = null;
+            Bitmap bodyBmp = null;
+            Bitmap titleBmp = null;
             try
             {
-                cropBmp = CaptureQuestDetailCrop(targetHwnd, videoW, videoH);
-                if (cropBmp == null)
+                var crops = CaptureQuestDetailCrops(targetHwnd, videoW, videoH);
+                if (crops == null || crops.Item1 == null)
                     return Tuple.Create<QuestEntry, string>(null, "화면 캡처에 실패했습니다.");
 
-                string[] lines = await RunWinRtOcrAsync(cropBmp);
-                if (lines == null || lines.Length == 0)
+                bodyBmp = crops.Item1;
+                titleBmp = crops.Item2;
+
+                string[] bodyLines = await RunWinRtOcrAsync(bodyBmp);
+                if (bodyLines == null || bodyLines.Length == 0)
                     return Tuple.Create<QuestEntry, string>(null, "퀘스트 텍스트를 인식하지 못했습니다.");
 
-                QuestEntry entry = ParseQuestLines(lines);
+                string extractedTitle = "";
+                if (titleBmp != null)
+                {
+                    try
+                    {
+                        string[] titleLines = await RunWinRtOcrAsync(titleBmp);
+                        if (titleLines != null && titleLines.Length > 0)
+                            extractedTitle = CleanLeadingBullet(string.Join(" ", titleLines)).Trim();
+                    }
+                    catch { }
+                }
+
+                QuestEntry entry = ParseQuestLines(bodyLines, extractedTitle);
                 if (entry == null)
                     return Tuple.Create<QuestEntry, string>(null, "퀘스트 상세 화면이 아닌 것 같습니다.");
 
@@ -277,11 +293,12 @@ namespace ScrcpyLauncher
             }
             finally
             {
-                if (cropBmp != null) cropBmp.Dispose();
+                if (bodyBmp != null) bodyBmp.Dispose();
+                if (titleBmp != null) titleBmp.Dispose();
             }
         }
 
-        private static Bitmap CaptureQuestDetailCrop(IntPtr hwnd, int videoW, int videoH)
+        private static Tuple<Bitmap, Bitmap> CaptureQuestDetailCrops(IntPtr hwnd, int videoW, int videoH)
         {
             RECT rc;
             if (!GetClientRect(hwnd, out rc)) return null;
@@ -297,52 +314,74 @@ namespace ScrcpyLauncher
                     try { PrintWindow(hwnd, hdc, 3); }
                     finally { g.ReleaseHdc(hdc); }
                 }
-
-                // Compute actual centered video rect inside client rect (handles 21:9 letterbox!)
-                double vx = 0, vy = 0, vw = cw, vh = ch;
-                if (videoW > 0 && videoH > 0)
-                {
-                    double winAspect = (double)cw / ch;
-                    double vidAspect = (double)videoW / videoH;
-                    if (winAspect > vidAspect + 0.002)
-                    {
-                        vh = ch;
-                        vw = ch * vidAspect;
-                        vx = (cw - vw) / 2.0;
-                    }
-                    else if (winAspect < vidAspect - 0.002)
-                    {
-                        vw = cw;
-                        vh = cw / vidAspect;
-                        vy = (ch - vh) / 2.0;
-                    }
-                }
-
-                // Right quest detail panel: Title ribbon + Region + Objective ONLY (x: 48%..97%, y: 15.5%..34.5%)
-                // Skipping y < 15.5% completely avoids the top category badge (포획/필드) being misread as the quest title!
-                int rx = Math.Max(0, (int)Math.Round(vx + vw * 0.48));
-                int ry = Math.Max(0, (int)Math.Round(vy + vh * 0.155));
-                int rw = Math.Min(cw - rx, (int)Math.Round(vw * 0.49));
-                int rh = Math.Min(ch - ry, (int)Math.Round(vh * 0.19));
-                if (rw < 80 || rh < 40) return null;
-
-                // 2x HighQualityBicubic upscale + Blue-channel contrast enhancement so orange highlight text pops out pitch black!
-                var scaled = new Bitmap(rw * 2, rh * 2, PixelFormat.Format32bppArgb);
-                using (var sg = Graphics.FromImage(scaled))
-                {
-                    sg.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    sg.DrawImage(full, new Rectangle(0, 0, scaled.Width, scaled.Height), new Rectangle(rx, ry, rw, rh), GraphicsUnit.Pixel);
-                }
-                EnhanceParchmentContrast(scaled);
-                return scaled;
+                return CropQuestRegionsFromBitmap(full, videoW, videoH);
             }
+        }
+
+        public static Tuple<Bitmap, Bitmap> CropQuestRegionsFromBitmap(Bitmap full, int videoW, int videoH)
+        {
+            if (full == null) return null;
+            int cw = full.Width;
+            int ch = full.Height;
+            if (cw < 200 || ch < 120) return null;
+
+            // Compute actual centered video rect inside client rect (handles 21:9 letterbox!)
+            double vx = 0, vy = 0, vw = cw, vh = ch;
+            if (videoW > 0 && videoH > 0)
+            {
+                double winAspect = (double)cw / ch;
+                double vidAspect = (double)videoW / videoH;
+                if (winAspect > vidAspect + 0.002)
+                {
+                    vh = ch;
+                    vw = ch * vidAspect;
+                    vx = (cw - vw) / 2.0;
+                }
+                else if (winAspect < vidAspect - 0.002)
+                {
+                    vw = cw;
+                    vh = cw / vidAspect;
+                    vy = (ch - vh) / 2.0;
+                }
+            }
+
+            // 1. Body-only crop (Region + Objective + Progress ONLY: x: 48%..97%, y: 22.0%..33.5%)
+            // Completely excludes the brown title ribbon above and flavor description below!
+            int rx = Math.Max(0, (int)Math.Round(vx + vw * 0.48));
+            int ry = Math.Max(0, (int)Math.Round(vy + vh * 0.220));
+            int rw = Math.Min(cw - rx, (int)Math.Round(vw * 0.49));
+            int rh = Math.Min(ch - ry, (int)Math.Round(vh * 0.115));
+            if (rw < 80 || rh < 24) return null;
+
+            var bodyScaled = new Bitmap(rw * 2, rh * 2, PixelFormat.Format32bppArgb);
+            using (var sg = Graphics.FromImage(bodyScaled))
+            {
+                sg.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                sg.DrawImage(full, new Rectangle(0, 0, bodyScaled.Width, bodyScaled.Height), new Rectangle(rx, ry, rw, rh), GraphicsUnit.Pixel);
+            }
+            EnhanceParchmentContrast(bodyScaled);
+
+            // 2. Title-only crop (for quest_history.csv logging ONLY: x: 48%..97%, y: 15.5%..22.0%)
+            Bitmap titleScaled = null;
+            int ty = Math.Max(0, (int)Math.Round(vy + vh * 0.155));
+            int th = Math.Min(ch - ty, (int)Math.Round(vh * 0.065));
+            if (rw >= 80 && th >= 14)
+            {
+                titleScaled = new Bitmap(rw * 2, th * 2, PixelFormat.Format32bppArgb);
+                using (var tg = Graphics.FromImage(titleScaled))
+                {
+                    tg.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    tg.DrawImage(full, new Rectangle(0, 0, titleScaled.Width, titleScaled.Height), new Rectangle(rx, ty, rw, th), GraphicsUnit.Pixel);
+                }
+            }
+
+            return Tuple.Create(bodyScaled, titleScaled);
         }
 
         private static void EnhanceParchmentContrast(Bitmap bmp)
         {
             int w = bmp.Width;
             int h = bmp.Height;
-            int titleSplitY = (int)(h * 0.38); // top ~38% of crop is the dark brown title ribbon with light text
             var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
             try
             {
@@ -350,7 +389,7 @@ namespace ScrcpyLauncher
                 byte[] buf = new byte[bytes];
                 Marshal.Copy(data.Scan0, buf, 0, bytes);
 
-                for (int y = titleSplitY; y < h; y++)
+                for (int y = 0; y < h; y++)
                 {
                     int row = y * data.Stride;
                     for (int x = 0; x < w; x++)
@@ -442,9 +481,9 @@ namespace ScrcpyLauncher
             }
         }
 
-        public static QuestEntry ParseQuestLines(string[] lines)
+        public static QuestEntry ParseQuestLines(string[] lines, string explicitTitle = null)
         {
-            if (lines == null || lines.Length < 2) return null;
+            if (lines == null || lines.Length < 1) return null;
 
             string allText = string.Join(" ", lines);
 
@@ -453,22 +492,37 @@ namespace ScrcpyLauncher
             var pm = Regex.Match(allText, @"\b(\d+\s*/\s*\d+)\b");
             if (pm.Success) progress = pm.Groups[1].Value.Replace(" ", "");
 
-            // Detect objective line (longest descriptive line or line containing 에서/포획/토벌/사냥/파괴/무기/둥지 or species)
+            // Detect objective line by keyword priority score (prevents long titles like "사막 비룡의 이동 경로 추적" from overriding real objectives!)
             string objective = "";
+            int bestScore = 0;
             int objIdx = -1;
             for (int i = 0; i < lines.Length; i++)
             {
                 string l = CleanLeadingBullet(lines[i]);
-                if (Regex.IsMatch(l, @"^\d+\s*/\s*\d+$")) continue;
-                if (l.Contains("에서") || l.Contains("포획") || l.Contains("토벌") || l.Contains("사냥") ||
-                    l.Contains("파괴") || l.Contains("원거리") || l.Contains("근거리") || l.Contains("둥지") ||
-                    FindBestMatch(l, AllSpecies, 1) != "")
+                if (string.IsNullOrEmpty(l) || Regex.IsMatch(l, @"^\d+\s*/\s*\d+$")) continue;
+
+                int score = 0;
+                if (l.Contains("포획") || l.Contains("토벌") || l.Contains("사냥") || l.Contains("수렵") || l.Contains("파괴")) score += 12;
+                if (l.Contains("에서") || l.Contains("원거리") || l.Contains("근거리") || l.Contains("근접") || l.Contains("난이도")) score += 8;
+                if (Regex.IsMatch(l, @"\d+\s*/\s*\d+")) score += 6;
+                if (l.Contains("둥지") || l.Contains("등지") || l.Contains("동지")) score += 4;
+
+                bool exactSpecies = false;
+                for (int s = 0; s < AllSpecies.Length; s++)
                 {
-                    if (l.Length >= objective.Length)
-                    {
-                        objective = l;
-                        objIdx = i;
-                    }
+                    if (l.Contains(AllSpecies[s])) { exactSpecies = true; break; }
+                }
+                if (exactSpecies) score += 5;
+                else if (FindBestMatch(l, AllSpecies, 1) != "") score += 1;
+
+                if (FindBestMatch(l, AllMonsterNames, 1) != "") score += 4;
+                if (score > 0 && lines.Length >= 2 && i > 0) score += 3;
+
+                if (score > bestScore || (score > 0 && score == bestScore && l.Length > objective.Length))
+                {
+                    bestScore = score;
+                    objective = l;
+                    objIdx = i;
                 }
             }
 
@@ -478,8 +532,8 @@ namespace ScrcpyLauncher
             // Remove trailing progress from objective
             objective = Regex.Replace(objective, @"\s*\d+\s*/\s*\d+\s*$", "").Trim();
 
-            // Detect quest title: usually line 1 (right below category badge like "포획"), not equal to region or objective
-            string title = "";
+            // Detect quest title: prefer explicitTitle from dedicated title-ribbon crop (for quest_history.csv logging ONLY)
+            string title = (explicitTitle ?? "").Trim();
             string category = "";
             for (int i = 0; i < lines.Length; i++)
             {
@@ -552,6 +606,9 @@ namespace ScrcpyLauncher
             if (objective.Contains("포획")) action = "포획";
             else if (objective.Contains("토벌")) action = "토벌";
             else if (objective.Contains("사냥") || objective.Contains("수렵")) action = "사냥";
+            else if (allText.Contains("포획")) action = "포획";
+            else if (allText.Contains("토벌")) action = "토벌";
+            else if (allText.Contains("사냥") || allText.Contains("수렵")) action = "사냥";
             else if (category.Contains("포획")) action = "포획";
             else if (category.Contains("토벌")) action = "토벌";
             else if (category.Contains("사냥") || category.Contains("수렵")) action = "사냥";
