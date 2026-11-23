@@ -765,15 +765,15 @@ namespace ScrcpyLauncher
                                     {
                                         if (!_heldKeys.ContainsKey(matched))
                                         {
-                                            // Fix MHO gathering camera lock: pressing F (interact/gather) while rotating camera
-                                            // causes the game to ignore the active camera touch finger. Lift the virtual camera finger
-                                            // cleanly for 250ms on initial press so the next mouse movement starts a fresh touch ID!
-                                            if (vk == 70 && _cameraLocked)
+                                            // Fix MHO camera lock on interact/item/tool keys (e.g. F gather, T capture net, C item, etc.):
+                                            // Pressing action keys while rotating camera can cause the game to drop the active camera touch ID.
+                                            // Cleanly lift the virtual camera finger briefly (skip Space/dodge so dodge+camera stays simultaneous).
+                                            if (_cameraLocked && vk != 32)
                                             {
                                                 StopCameraFingerLocked();
                                                 _camAccumDx = 0;
                                                 _camAccumDy = 0;
-                                                _camSuppressUntilUtc = DateTime.UtcNow.AddMilliseconds(250);
+                                                _camSuppressUntilUtc = DateTime.UtcNow.AddMilliseconds(vk == 70 ? 250 : 180);
                                             }
                                             long id = _nextTouchId++;
                                             _heldKeys[matched] = id;
