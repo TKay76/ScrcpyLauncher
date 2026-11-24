@@ -622,7 +622,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.5.8' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.5.9' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -2449,7 +2449,8 @@ namespace ScrcpyLauncher
                     StandardOutputEncoding = Encoding.UTF8,
                     StandardErrorEncoding = Encoding.UTF8
                 };
-                // Prevent SDL2 from minimizing fullscreen window on Alt-Tab focus loss
+                // Prevent SDL2 & SDL3 (scrcpy 3.x/5.x) from minimizing fullscreen window on Alt-Tab focus loss
+                psi.EnvironmentVariables["SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0";
                 psi.EnvironmentVariables["SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS"] = "0";
 
                 _scrcpyProcess = new Process { StartInfo = psi, EnableRaisingEvents = true };

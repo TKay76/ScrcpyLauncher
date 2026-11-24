@@ -20,7 +20,20 @@ namespace ScrcpyLauncher
 
         private bool _active = false;
         private bool _isPaused = false;
-        private long _nextTouchId = 1;
+
+        // Fixed multi-touch pointer slots (commercial Android emulator architecture: prevents ghost touches & pinch-zoom collisions!)
+        private const long SLOT_JOYSTICK = 1;
+        private const long SLOT_CAMERA   = 2;
+        private const long SLOT_WHEEL    = 3;
+        private const long SLOT_LEFT     = 4;
+        private const long SLOT_RIGHT    = 5;
+        private const long SLOT_MANUAL   = 6;
+        private static long GetActionKeySlot(KeyBindItem item)
+        {
+            int mods = item != null ? (item.Modifiers & 0x7) : 0;
+            int vk = item != null ? (NormalizeVk(item.VkCode) & 0xFF) : 0;
+            return 100L + (mods << 8) + vk;
+        }
 
         // Camera state (flushed smoothly on 10ms EngineTick — no SetCursorPos inside WH_MOUSE_LL!)
         private bool _cameraLocked = false;
@@ -53,21 +66,23 @@ namespace ScrcpyLauncher
         private int _manualLastX = 5000;
         private int _manualLastY = 5000;
 
-        // Joystick state (high-precision 8ms tick + SOCD last-input-priority + Shift sprint)
+        // Joystick state (0ms instant response + fixed slot + outer-rim 180° pivot + 15ms grace + 16ms re-down cooldown)
         private bool _joyUp, _joyDown, _joyLeft, _joyRight, _joySprint;
         private int _joyLastHoriz = 0; // -1 = Left, +1 = Right
         private int _joyLastVert = 0;  // -1 = Up,   +1 = Down
+        private int _joyActiveDx = 0;
+        private int _joyActiveDy = 0;
         private long _joyTouchId = 0;
         private double _joyCurX, _joyCurY;
-        private double _joyFromX, _joyFromY;
         private double _joyTargetX, _joyTargetY;
-        private double _joyFirstTargetX, _joyFirstTargetY;
-        private bool _joyMoving = false;
+        private bool _joySnapFullNextTick = false;
         private bool _joyHasMoved = false;
-        private DateTime _joyMoveStartedUtc = DateTime.MinValue;
         private DateTime _joyLastKeepAliveUtc = DateTime.MinValue;
+        private DateTime _joyReleaseGraceStartUtc = DateTime.MinValue;
+        private DateTime _joyLastUpUtc = DateTime.MinValue;
         private int _joyKeepAliveToggle = 0;
-        private const double JoySmoothMs = 24.0;
+        private const double JoyReleaseGraceMs = 15.0;
+        private const double JoyRedownCooldownMs = 16.0;
         private bool _hiResTimerActive = false;
 
         // Action keys currently held down (bind -> pointerId)
@@ -340,40 +355,10 @@ namespace ScrcpyLauncher
                     }
                 }
 
-                // 2. Smooth 50ms joystick interpolation + 30Hz keep-alive while held (fixes solo WASD in normal mode!)
-                if (_joyTouchId != 0)
-                {
-                    if (_joyMoving)
-                    {
-                        double elapsed = (now - _joyMoveStartedUtc).TotalMilliseconds;
-                        if (elapsed > 0)
-                        {
-                            double progress = Math.Min(1.0, elapsed / JoySmoothMs);
-                            double x = progress >= 1.0 ? _joyTargetX : _joyFromX + (_joyTargetX - _joyFromX) * progress;
-                            double y = progress >= 1.0 ? _joyTargetY : _joyFromY + (_joyTargetY - _joyFromY) * progress;
-                            if (progress >= 1.0) _joyMoving = false;
+                // 3. 8ms Joystick tick (completes 100% snap after DOWN, handles 30Hz keep-alive, grace release & cooldown start)
+                TickJoystickLocked(now);
 
-                            if (Math.Abs(_joyCurX - x) >= 0.5 || Math.Abs(_joyCurY - y) >= 0.5)
-                            {
-                                _joyCurX = x;
-                                _joyCurY = y;
-                                _joyHasMoved = true;
-                                _joyLastKeepAliveUtc = now;
-                                _client.InjectTouch(2, _joyTouchId, (int)Math.Round(x), (int)Math.Round(y));
-                            }
-                        }
-                    }
-                    else if ((now - _joyLastKeepAliveUtc).TotalMilliseconds >= 32.0)
-                    {
-                        _joyLastKeepAliveUtc = now;
-                        _joyKeepAliveToggle ^= 1;
-                        int kx = (int)Math.Round(_joyCurX) + _joyKeepAliveToggle;
-                        int ky = (int)Math.Round(_joyCurY);
-                        _client.InjectTouch(2, _joyTouchId, kx, ky);
-                    }
-                }
-
-                // 3. Auto-release camera finger after 500ms of mouse idle
+                // 4. Auto-release camera finger after 500ms of mouse idle
                 if (_camTouchId != 0 && (now - _lastCamMotionUtc).TotalMilliseconds >= 500.0)
                 {
                     StopCameraFingerLocked();
@@ -486,12 +471,16 @@ namespace ScrcpyLauncher
                 {
                     _client.InjectTouch(1, _joyTouchId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
                     _joyTouchId = 0;
+                    _joyLastUpUtc = DateTime.UtcNow;
                 }
-                _joyMoving = false;
+                _joySnapFullNextTick = false;
                 _joyHasMoved = false;
+                _joyReleaseGraceStartUtc = DateTime.MinValue;
                 _joyUp = _joyDown = _joyLeft = _joyRight = _joySprint = false;
                 _joyLastHoriz = 0;
                 _joyLastVert = 0;
+                _joyActiveDx = 0;
+                _joyActiveDy = 0;
 
                 StopCameraFingerLocked();
 
@@ -539,290 +528,332 @@ namespace ScrcpyLauncher
             return vk;
         }
 
+        private void ReleaseKeyOnUpUnconditional(int vk)
+        {
+            DateTime now = DateTime.UtcNow;
+            lock (_stateLock)
+            {
+                if (_profile != null)
+                {
+                    if (_profile.SprintVk > 0 && vk == NormalizeVk(_profile.SprintVk) && _joySprint)
+                    {
+                        _joySprint = false;
+                        if (_joyTouchId != 0) ApplyJoystickImmediateLocked(now);
+                    }
+
+                    bool joyChanged = false;
+                    if (vk == NormalizeVk(_profile.JoyUpVk) && _joyUp) { _joyUp = false; joyChanged = true; }
+                    else if (vk == NormalizeVk(_profile.JoyDownVk) && _joyDown) { _joyDown = false; joyChanged = true; }
+                    else if (vk == NormalizeVk(_profile.JoyLeftVk) && _joyLeft) { _joyLeft = false; joyChanged = true; }
+                    else if (vk == NormalizeVk(_profile.JoyRightVk) && _joyRight) { _joyRight = false; joyChanged = true; }
+                    if (joyChanged) ApplyJoystickImmediateLocked(now);
+                }
+
+                if (_wheelTouchId != 0 && NormalizeVk(_wheelVk) == vk)
+                {
+                    _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                    _wheelTouchId = 0;
+                    _wheelVk = 0;
+                    _wheelAccumDx = 0;
+                    _wheelAccumDy = 0;
+                }
+
+                if (_heldKeys.Count > 0)
+                {
+                    List<KeyBindItem> toRelease = null;
+                    foreach (var kv in _heldKeys)
+                    {
+                        if (NormalizeVk(kv.Key.VkCode) == vk)
+                        {
+                            if (toRelease == null) toRelease = new List<KeyBindItem>();
+                            toRelease.Add(kv.Key);
+                        }
+                    }
+                    if (toRelease != null)
+                    {
+                        for (int r = 0; r < toRelease.Count; r++)
+                        {
+                            var relItem = toRelease[r];
+                            long relId = _heldKeys[relItem];
+                            _heldKeys.Remove(relItem);
+                            _client.InjectTouch(1, relId, relItem.X, relItem.Y);
+                        }
+                    }
+                }
+            }
+        }
+
         private IntPtr KeyboardHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0 && _active && _profile != null && _client.IsConnected && _targetHwnd != IntPtr.Zero)
             {
-                if (GetForegroundWindow() == _targetHwnd)
+                int msg = wParam.ToInt32();
+                var kb = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
+                // Check LLKHF_UP (0x80) hardware transition flag in addition to WM_KEYUP/WM_SYSKEYUP so multi-key rollover & IME never drop a key release!
+                bool isUp = (msg == WM_KEYUP || msg == WM_SYSKEYUP || (kb.flags & 0x80) != 0);
+                bool isDown = !isUp && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
+
+                if (isDown || isUp)
                 {
-                    int msg = wParam.ToInt32();
-                    bool isDown = (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN);
-                    bool isUp = (msg == WM_KEYUP || msg == WM_SYSKEYUP);
+                    int vk = NormalizeVk((int)kb.vkCode);
 
-                    if (isDown || isUp)
+                    // CRITICAL: If target window is NOT foreground (focus flicker, popup, Alt-Tab), ALWAYS process key UP so no touch ever stays stuck!
+                    if (GetForegroundWindow() != _targetHwnd)
                     {
-                        var kb = (KBDLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(KBDLLHOOKSTRUCT));
-                        int vk = NormalizeVk((int)kb.vkCode);
+                        if (isUp) ReleaseKeyOnUpUnconditional(vk);
+                        return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+                    }
 
-                        if (vk == 91 || vk == 92)
-                            return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+                    if (vk == 91 || vk == 92)
+                        return CallNextHookEx(_kbHook, nCode, wParam, lParam);
 
-                        int curMods = GetCurrentModifiers();
+                    int curMods = GetCurrentModifiers();
 
-                        // Ctrl + F1..F9 switches keymap profiles instantly (0..8)
-                        if (vk >= 112 && vk <= 120 && (curMods & 1) != 0)
+                    // Ctrl + F1..F9 switches keymap profiles instantly (0..8)
+                    if (vk >= 112 && vk <= 120 && (curMods & 1) != 0)
+                    {
+                        if (isUp && ProfileSwitchRequested != null)
+                            ProfileSwitchRequested(vk - 112);
+                        return (IntPtr)1;
+                    }
+
+                    // F2 (without modifiers) toggles Chat / Typing pause mode (lets Korean/English keyboard type into game!)
+                    if (vk == 113 && curMods == 0)
+                    {
+                        if (isUp)
                         {
-                            if (isUp && ProfileSwitchRequested != null)
-                                ProfileSwitchRequested(vk - 112);
-                            return (IntPtr)1;
-                        }
-
-                        // F2 (without modifiers) toggles Chat / Typing pause mode (lets Korean/English keyboard type into game!)
-                        if (vk == 113 && curMods == 0)
-                        {
-                            if (isUp)
-                            {
-                                _isPaused = !_isPaused;
-                                if (_isPaused)
-                                {
-                                    SetCameraLock(false);
-                                    ReleaseAllInputs();
-                                }
-                                if (PauseToggled != null) PauseToggled(_isPaused);
-                            }
-                            return (IntPtr)1;
-                        }
-
-                        // While paused (Chat / Typing mode), let all keyboard keys pass straight through to Android UHID keyboard!
-                        if (_isPaused)
-                            return CallNextHookEx(_kbHook, nCode, wParam, lParam);
-
-                        // F1 (without Ctrl) toggles on-screen key hints mid-game
-                        if (vk == 112 && curMods == 0)
-                        {
-                            if (isUp && HintToggleRequested != null) HintToggleRequested();
-                            return (IntPtr)1;
-                        }
-
-                        // Camera toggle key (e.g. Alt): disabled in KeyboardOnlyAssist (gamepad hybrid) mode
-                        if (!KeyboardOnlyAssist && _profile.EnableMouseCamera && vk == NormalizeVk(_profile.CameraToggleVk))
-                        {
-                            if (isDown)
-                            {
-                                if (!_camToggleHeld)
-                                {
-                                    _camToggleHeld = true;
-                                    _camToggleUsedAsModifier = false;
-                                }
-                            }
-                            else if (isUp)
-                            {
-                                bool usedAsMod = _camToggleUsedAsModifier;
-                                _camToggleHeld = false;
-                                _camToggleUsedAsModifier = false;
-                                if (!usedAsMod) SetCameraLock(!_cameraLocked);
-                            }
-                            return (vk == 18) ? CallNextHookEx(_kbHook, nCode, wParam, lParam) : (IntPtr)1;
-                        }
-
-                        // Native Windows Alt+Tab: release camera lock & held touches, then pass through to OS!
-                        if (vk == 9 && (curMods & 4) != 0 && FindMatchingBind(vk, curMods) == null)
-                        {
-                            if (isDown)
+                            _isPaused = !_isPaused;
+                            if (_isPaused)
                             {
                                 SetCameraLock(false);
                                 ReleaseAllInputs();
-                                _camToggleUsedAsModifier = true;
                             }
-                            return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+                            if (PauseToggled != null) PauseToggled(_isPaused);
                         }
+                        return (IntPtr)1;
+                    }
 
-                        // WASD + Shift sprint virtual joystick (disabled in Gamepad KeyboardOnlyAssist mode)
-                        // Also allow Ctrl/Alt+WASD combos to pass through without being hijacked by joystick (still release already-held keys on isUp).
-                        if (!KeyboardOnlyAssist && _profile.EnableJoystick)
+                    // While paused (Chat / Typing mode), still release any held touch on UP, then pass all keys straight through to Android UHID!
+                    if (_isPaused)
+                    {
+                        if (isUp) ReleaseKeyOnUpUnconditional(vk);
+                        return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+                    }
+
+                    // F1 (without Ctrl) toggles on-screen key hints mid-game
+                    if (vk == 112 && curMods == 0)
+                    {
+                        if (isUp && HintToggleRequested != null) HintToggleRequested();
+                        return (IntPtr)1;
+                    }
+
+                    // Camera toggle key (e.g. Alt): disabled in KeyboardOnlyAssist (gamepad hybrid) mode
+                    if (!KeyboardOnlyAssist && _profile.EnableMouseCamera && vk == NormalizeVk(_profile.CameraToggleVk))
+                    {
+                        if (isDown)
                         {
-                            // Shift sprint: update _joySprint unless user explicitly mapped Shift itself as a plain action key
-                            if (_profile.SprintVk > 0 && vk == NormalizeVk(_profile.SprintVk) && FindMatchingBind(vk, 0) == null)
+                            if (!_camToggleHeld)
                             {
-                                lock (_stateLock)
-                                {
-                                    if (_joySprint != isDown)
-                                    {
-                                        _joySprint = isDown;
-                                        if (_joyTouchId != 0)
-                                            UpdateJoystickLocked(isUp);
-                                    }
-                                }
-                                // Let Shift pass through so Shift+Key combos & Alt+Shift+O continue working natively!
-                            }
-
-                            bool isJoyKey = (vk == NormalizeVk(_profile.JoyUpVk) || vk == NormalizeVk(_profile.JoyDownVk) ||
-                                             vk == NormalizeVk(_profile.JoyLeftVk) || vk == NormalizeVk(_profile.JoyRightVk));
-                            if (isJoyKey && (isUp || (curMods & 5) == 0))
-                            {
-                                bool joyHit = false;
-                                bool changed = false;
-                                lock (_stateLock)
-                                {
-                                    if (vk == NormalizeVk(_profile.JoyUpVk))
-                                    {
-                                        changed = (_joyUp != isDown);
-                                        _joyUp = isDown;
-                                        if (isDown) _joyLastVert = -1;
-                                        joyHit = true;
-                                    }
-                                    else if (vk == NormalizeVk(_profile.JoyDownVk))
-                                    {
-                                        changed = (_joyDown != isDown);
-                                        _joyDown = isDown;
-                                        if (isDown) _joyLastVert = 1;
-                                        joyHit = true;
-                                    }
-                                    else if (vk == NormalizeVk(_profile.JoyLeftVk))
-                                    {
-                                        changed = (_joyLeft != isDown);
-                                        _joyLeft = isDown;
-                                        if (isDown) _joyLastHoriz = -1;
-                                        joyHit = true;
-                                    }
-                                    else if (vk == NormalizeVk(_profile.JoyRightVk))
-                                    {
-                                        changed = (_joyRight != isDown);
-                                        _joyRight = isDown;
-                                        if (isDown) _joyLastHoriz = 1;
-                                        joyHit = true;
-                                    }
-
-                                    if (joyHit && changed)
-                                        UpdateJoystickLocked(isUp);
-                                }
-                                // Only swallow on DOWN (when no Ctrl/Alt) or on UP if it actually changed joystick state
-                                if (joyHit && (isDown || changed)) return (IntPtr)1;
+                                _camToggleHeld = true;
+                                _camToggleUsedAsModifier = false;
                             }
                         }
-
-                        // On key UP, release any held action/wheel bind whose main VkCode matches (even if modifier was released first)
-                        if (isUp)
+                        else if (isUp)
                         {
-                            bool releasedAny = false;
+                            bool usedAsMod = _camToggleUsedAsModifier;
+                            _camToggleHeld = false;
+                            _camToggleUsedAsModifier = false;
+                            if (!usedAsMod) SetCameraLock(!_cameraLocked);
+                        }
+                        return (vk == 18) ? CallNextHookEx(_kbHook, nCode, wParam, lParam) : (IntPtr)1;
+                    }
+
+                    // Native Windows Alt+Tab: release camera lock & held touches, then pass through to OS!
+                    if (vk == 9 && (curMods & 4) != 0 && FindMatchingBind(vk, curMods) == null)
+                    {
+                        if (isDown)
+                        {
+                            SetCameraLock(false);
+                            ReleaseAllInputs();
+                            _camToggleUsedAsModifier = true;
+                        }
+                        return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+                    }
+
+                    // WASD + Shift sprint virtual joystick (0ms instant response on key event + fixed slot!)
+                    if (!KeyboardOnlyAssist && _profile.EnableJoystick)
+                    {
+                        if (_profile.SprintVk > 0 && vk == NormalizeVk(_profile.SprintVk) && FindMatchingBind(vk, 0) == null)
+                        {
                             lock (_stateLock)
                             {
-                                if (_wheelTouchId != 0 && NormalizeVk(_wheelVk) == vk)
+                                if (_joySprint != isDown)
                                 {
-                                    _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
-                                    _wheelTouchId = 0;
-                                    _wheelVk = 0;
-                                    _wheelAccumDx = 0;
-                                    _wheelAccumDy = 0;
+                                    _joySprint = isDown;
+                                    if (_joyTouchId != 0)
+                                        ApplyJoystickImmediateLocked(DateTime.UtcNow);
+                                }
+                            }
+                        }
+
+                        bool isJoyKey = (vk == NormalizeVk(_profile.JoyUpVk) || vk == NormalizeVk(_profile.JoyDownVk) ||
+                                         vk == NormalizeVk(_profile.JoyLeftVk) || vk == NormalizeVk(_profile.JoyRightVk));
+                        if (isJoyKey && (isUp || (curMods & 5) == 0))
+                        {
+                            bool changed = false;
+                            lock (_stateLock)
+                            {
+                                if (vk == NormalizeVk(_profile.JoyUpVk))
+                                {
+                                    changed = (_joyUp != isDown);
+                                    _joyUp = isDown;
+                                    if (isDown) _joyLastVert = -1;
+                                }
+                                else if (vk == NormalizeVk(_profile.JoyDownVk))
+                                {
+                                    changed = (_joyDown != isDown);
+                                    _joyDown = isDown;
+                                    if (isDown) _joyLastVert = 1;
+                                }
+                                else if (vk == NormalizeVk(_profile.JoyLeftVk))
+                                {
+                                    changed = (_joyLeft != isDown);
+                                    _joyLeft = isDown;
+                                    if (isDown) _joyLastHoriz = -1;
+                                }
+                                else if (vk == NormalizeVk(_profile.JoyRightVk))
+                                {
+                                    changed = (_joyRight != isDown);
+                                    _joyRight = isDown;
+                                    if (isDown) _joyLastHoriz = 1;
+                                }
+
+                                if (changed)
+                                    ApplyJoystickImmediateLocked(DateTime.UtcNow);
+                            }
+                            if (isDown || changed) return (IntPtr)1;
+                        }
+                    }
+
+                    // On key UP, release any held action/wheel bind whose main VkCode matches (even if modifier was released first)
+                    if (isUp)
+                    {
+                        bool releasedAny = false;
+                        lock (_stateLock)
+                        {
+                            if (_wheelTouchId != 0 && NormalizeVk(_wheelVk) == vk)
+                            {
+                                _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY));
+                                _wheelTouchId = 0;
+                                _wheelVk = 0;
+                                _wheelAccumDx = 0;
+                                _wheelAccumDy = 0;
+                                releasedAny = true;
+                            }
+
+                            List<KeyBindItem> toRelease = null;
+                            foreach (var kv in _heldKeys)
+                            {
+                                if (NormalizeVk(kv.Key.VkCode) == vk)
+                                {
+                                    if (toRelease == null) toRelease = new List<KeyBindItem>();
+                                    toRelease.Add(kv.Key);
+                                }
+                            }
+                            if (toRelease != null)
+                            {
+                                for (int r = 0; r < toRelease.Count; r++)
+                                {
+                                    var relItem = toRelease[r];
+                                    long relId = _heldKeys[relItem];
+                                    _heldKeys.Remove(relItem);
+                                    _client.InjectTouch(1, relId, relItem.X, relItem.Y);
                                     releasedAny = true;
                                 }
-
-                                List<KeyBindItem> toRelease = null;
-                                foreach (var kv in _heldKeys)
-                                {
-                                    if (NormalizeVk(kv.Key.VkCode) == vk)
-                                    {
-                                        if (toRelease == null) toRelease = new List<KeyBindItem>();
-                                        toRelease.Add(kv.Key);
-                                    }
-                                }
-                                if (toRelease != null)
-                                {
-                                    for (int r = 0; r < toRelease.Count; r++)
-                                    {
-                                        var relItem = toRelease[r];
-                                        long relId = _heldKeys[relItem];
-                                        _heldKeys.Remove(relItem);
-                                        _client.InjectTouch(1, relId, relItem.X, relItem.Y);
-                                        releasedAny = true;
-                                    }
-                                }
                             }
-                            if (releasedAny) return (IntPtr)1;
                         }
+                        if (releasedAny) return (IntPtr)1;
+                    }
 
-                        // On key DOWN, match combo first (Ctrl/Shift/Alt+Key), then plain key
-                        var matched = FindMatchingBind(vk, curMods);
-                        if (matched != null)
+                    // On key DOWN, match combo first (Ctrl/Shift/Alt+Key), then plain key
+                    var matched = FindMatchingBind(vk, curMods);
+                    if (matched != null)
+                    {
+                        if (isDown)
                         {
-                            if (isDown)
-                            {
-                                if ((matched.Modifiers & 4) != 0 && NormalizeVk(_profile.CameraToggleVk) == 18)
-                                    _camToggleUsedAsModifier = true;
+                            if ((matched.Modifiers & 4) != 0 && NormalizeVk(_profile.CameraToggleVk) == 18)
+                                _camToggleUsedAsModifier = true;
 
-                                lock (_stateLock)
+                            lock (_stateLock)
+                            {
+                                if (matched.IsWheelDrag)
                                 {
-                                    if (matched.IsWheelDrag)
+                                    if (_wheelTouchId == 0)
                                     {
-                                        if (_wheelTouchId == 0)
+                                        StopCameraFingerLocked();
+                                        _camAccumDx = 0;
+                                        _camAccumDy = 0;
+                                        _wheelVk = matched.VkCode;
+                                        _wheelOriginX = matched.X;
+                                        _wheelOriginY = matched.Y;
+                                        _wheelCurX = matched.X;
+                                        _wheelCurY = matched.Y;
+                                        _wheelRadius = matched.WheelRadius > 200 ? matched.WheelRadius : 1500;
+                                        _wheelAccumDx = 0;
+                                        _wheelAccumDy = 0;
+                                        _wheelTouchId = SLOT_WHEEL;
+                                        _client.InjectTouch(0, _wheelTouchId, matched.X, matched.Y);
+                                    }
+                                }
+                                else
+                                {
+                                    if (!_heldKeys.ContainsKey(matched))
+                                    {
+                                        // Lift active camera finger cleanly so interact/equip keys (F gather, T capture net) never freeze camera;
+                                        // only suppress mouse delta briefly on F/T so combat skills (Q/E/R) NEVER stutter mouse aim!
+                                        if (_cameraLocked && vk != 32)
                                         {
                                             StopCameraFingerLocked();
-                                            _camAccumDx = 0;
-                                            _camAccumDy = 0;
-                                            _wheelVk = matched.VkCode;
-                                            _wheelOriginX = matched.X;
-                                            _wheelOriginY = matched.Y;
-                                            _wheelCurX = matched.X;
-                                            _wheelCurY = matched.Y;
-                                            _wheelRadius = matched.WheelRadius > 200 ? matched.WheelRadius : 1500;
-                                            _wheelAccumDx = 0;
-                                            _wheelAccumDy = 0;
-                                            _wheelTouchId = _nextTouchId++;
-                                            _client.InjectTouch(0, _wheelTouchId, matched.X, matched.Y);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (!_heldKeys.ContainsKey(matched))
-                                        {
-                                            // Fix MHO camera lock on interact/item/tool keys (e.g. F gather, T capture net, C item, etc.):
-                                            // Pressing action keys while rotating camera can cause the game to drop the active camera touch ID.
-                                            // Cleanly lift the virtual camera finger briefly (skip Space/dodge so dodge+camera stays simultaneous).
-                                            if (_cameraLocked && vk != 32)
+                                            if (vk == 70 || vk == 84)
                                             {
-                                                StopCameraFingerLocked();
                                                 _camAccumDx = 0;
                                                 _camAccumDy = 0;
-                                                _camSuppressUntilUtc = DateTime.UtcNow.AddMilliseconds(vk == 70 ? 250 : 180);
+                                                _camSuppressUntilUtc = DateTime.UtcNow.AddMilliseconds(180);
                                             }
-                                            long id = _nextTouchId++;
-                                            _heldKeys[matched] = id;
-                                            _client.InjectTouch(0, id, matched.X, matched.Y);
                                         }
+                                        long id = GetActionKeySlot(matched);
+                                        _heldKeys[matched] = id;
+                                        _client.InjectTouch(0, id, matched.X, matched.Y);
                                     }
                                 }
                             }
-                            return (IntPtr)1;
                         }
-
-                        // Any other key pressed while Alt is held (e.g. Alt+F, Alt+O, Alt+I, Alt+F4):
-                        // mark Alt as used so releasing Alt does NOT toggle camera lock, then pass through to scrcpy/Windows!
-                        if ((curMods & 4) != 0 && isDown)
-                            _camToggleUsedAsModifier = true;
+                        return (IntPtr)1;
                     }
+
+                    if ((curMods & 4) != 0 && isDown)
+                        _camToggleUsedAsModifier = true;
                 }
             }
             return CallNextHookEx(_kbHook, nCode, wParam, lParam);
         }
 
-        private void UpdateJoystickLocked(bool keyReleased)
+        private void ComputeJoystickTargetLocked(out int dx, out int dy, out double tx, out double ty)
         {
-            // SOCD (Last-Input-Priority): pressing D while A is still held switches immediately to +1 instead of cancelling to 0!
-            int dx = 0;
+            dx = 0;
             if (_joyLeft && _joyRight) dx = (_joyLastHoriz != 0) ? _joyLastHoriz : 1;
             else if (_joyRight) dx = 1;
             else if (_joyLeft) dx = -1;
 
-            int dy = 0;
+            dy = 0;
             if (_joyUp && _joyDown) dy = (_joyLastVert != 0) ? _joyLastVert : 1;
             else if (_joyDown) dy = 1;
             else if (_joyUp) dy = -1;
 
             if (dx == 0 && dy == 0)
             {
-                long oldId = _joyTouchId;
-                _joyTouchId = 0;
-                _joyMoving = false;
-                if (oldId != 0)
-                {
-                    if (keyReleased && !_joyHasMoved)
-                    {
-                        _joyCurX = _joyFirstTargetX;
-                        _joyCurY = _joyFirstTargetY;
-                        _client.InjectTouch(2, oldId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
-                    }
-                    _client.InjectTouch(1, oldId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
-                }
+                tx = _profile.JoyX;
+                ty = _profile.JoyY;
                 return;
             }
 
@@ -830,32 +861,153 @@ namespace ScrcpyLauncher
             double scale = _joySprint && _profile.SprintScale > 1.0 ? _profile.SprintScale : 1.0;
             double rad = _profile.JoyRadius * scale;
 
-            double tx = Math.Max(100, Math.Min(9900, _profile.JoyX + (dx / len) * rad));
-            double ty = Math.Max(100, Math.Min(9900, _profile.JoyY + (dy / len) * rad * 1.778));
+            // Clamp safely inside [350..9650] so Shift sprint never touches Android system edge back/home gesture zones!
+            tx = Math.Max(350, Math.Min(9650, _profile.JoyX + (dx / len) * rad));
+            ty = Math.Max(350, Math.Min(9650, _profile.JoyY + (dy / len) * rad * 1.778));
+        }
 
-            bool starting = (_joyTouchId == 0);
-            if (starting)
+        private void ApplyJoystickImmediateLocked(DateTime now)
+        {
+            if (_profile == null) return;
+
+            int dx, dy;
+            double tx, ty;
+            ComputeJoystickTargetLocked(out dx, out dy, out tx, out ty);
+
+            if (dx != 0 || dy != 0)
             {
-                _joyTouchId = _nextTouchId++;
-                _joyCurX = _profile.JoyX;
-                _joyCurY = _profile.JoyY;
-                _joyHasMoved = false;
-                _joyFirstTargetX = tx;
-                _joyFirstTargetY = ty;
-                _joyLastKeepAliveUtc = DateTime.UtcNow;
-                // Send clean ACTION_DOWN at joystick center; first 8ms EngineTick will push smoothly toward (tx, ty)
-                _client.InjectTouch(0, _joyTouchId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
+                _joyReleaseGraceStartUtc = DateTime.MinValue;
+
+                if (_joyTouchId == 0)
+                {
+                    // If within 16ms of previous ACTION_UP, defer to next 8ms EngineTick so game joystick resets cleanly
+                    if (_joyLastUpUtc != DateTime.MinValue && (now - _joyLastUpUtc).TotalMilliseconds < JoyRedownCooldownMs)
+                        return;
+
+                    _joyTouchId = SLOT_JOYSTICK;
+                    _client.InjectTouch(0, _joyTouchId, _profile.JoyX, _profile.JoyY);
+
+                    // Break deadzone at 0ms (40% step), then snap to 100% on the very next 8ms tick!
+                    double initX = _profile.JoyX + (tx - _profile.JoyX) * 0.40;
+                    double initY = _profile.JoyY + (ty - _profile.JoyY) * 0.40;
+                    _joyCurX = initX;
+                    _joyCurY = initY;
+                    _joyTargetX = tx;
+                    _joyTargetY = ty;
+                    _joyActiveDx = dx;
+                    _joyActiveDy = dy;
+                    _joySnapFullNextTick = true;
+                    _joyHasMoved = true;
+                    _joyLastKeepAliveUtc = now;
+                    _client.InjectTouch(2, _joyTouchId, (int)Math.Round(initX), (int)Math.Round(initY));
+                    return;
+                }
+
+                // Finger ALREADY active: 0ms instant direction / sprint update!
+                // If flipping ~180° (e.g. A <-> D or W <-> S), swing around outer rim via 90° midpoint so stick NEVER crosses (0,0) deadzone!
+                if ((_joyActiveDx * dx + _joyActiveDy * dy) < 0)
+                {
+                    int perpDx = (_joyActiveDy != 0) ? _joyActiveDy : 0;
+                    int perpDy = (_joyActiveDx != 0) ? -_joyActiveDx : 0;
+                    if (perpDx != 0 || perpDy != 0)
+                    {
+                        double plen = Math.Sqrt(perpDx * perpDx + perpDy * perpDy);
+                        double scale = _joySprint && _profile.SprintScale > 1.0 ? _profile.SprintScale : 1.0;
+                        double rad = _profile.JoyRadius * scale;
+                        double arcX = Math.Max(350, Math.Min(9650, _profile.JoyX + (perpDx / plen) * rad));
+                        double arcY = Math.Max(350, Math.Min(9650, _profile.JoyY + (perpDy / plen) * rad * 1.778));
+                        _client.InjectTouch(2, _joyTouchId, (int)Math.Round(arcX), (int)Math.Round(arcY));
+                    }
+                }
+
+                _joyCurX = tx;
+                _joyCurY = ty;
+                _joyTargetX = tx;
+                _joyTargetY = ty;
+                _joyActiveDx = dx;
+                _joyActiveDy = dy;
+                _joySnapFullNextTick = false;
+                _joyHasMoved = true;
+                _joyLastKeepAliveUtc = now;
+                _client.InjectTouch(2, _joyTouchId, (int)Math.Round(tx), (int)Math.Round(ty));
             }
+            else if (_joyTouchId != 0)
+            {
+                if (_joyReleaseGraceStartUtc == DateTime.MinValue)
+                    _joyReleaseGraceStartUtc = now;
+            }
+        }
 
-            if (!starting && Math.Abs(_joyTargetX - tx) < 1 && Math.Abs(_joyTargetY - ty) < 1)
-                return;
+        private void TickJoystickLocked(DateTime now)
+        {
+            if (_profile == null) return;
 
-            _joyFromX = _joyCurX;
-            _joyFromY = _joyCurY;
-            _joyTargetX = tx;
-            _joyTargetY = ty;
-            _joyMoveStartedUtc = DateTime.UtcNow;
-            _joyMoving = true;
+            int dx, dy;
+            double tx, ty;
+            ComputeJoystickTargetLocked(out dx, out dy, out tx, out ty);
+
+            if (dx != 0 || dy != 0)
+            {
+                _joyReleaseGraceStartUtc = DateTime.MinValue;
+
+                if (_joyTouchId == 0)
+                {
+                    // Deferred start once 16ms re-down cooldown expires
+                    if (_joyLastUpUtc != DateTime.MinValue && (now - _joyLastUpUtc).TotalMilliseconds < JoyRedownCooldownMs)
+                        return;
+                    ApplyJoystickImmediateLocked(now);
+                    return;
+                }
+
+                if (_joySnapFullNextTick || Math.Abs(_joyCurX - tx) >= 2.0 || Math.Abs(_joyCurY - ty) >= 2.0)
+                {
+                    _joyCurX = tx;
+                    _joyCurY = ty;
+                    _joyTargetX = tx;
+                    _joyTargetY = ty;
+                    _joyActiveDx = dx;
+                    _joyActiveDy = dy;
+                    _joySnapFullNextTick = false;
+                    _joyHasMoved = true;
+                    _joyLastKeepAliveUtc = now;
+                    _client.InjectTouch(2, _joyTouchId, (int)Math.Round(tx), (int)Math.Round(ty));
+                }
+                else if ((now - _joyLastKeepAliveUtc).TotalMilliseconds >= 32.0)
+                {
+                    _joyLastKeepAliveUtc = now;
+                    _joyKeepAliveToggle ^= 1;
+                    int kx = (int)Math.Round(_joyCurX) + _joyKeepAliveToggle;
+                    int ky = (int)Math.Round(_joyCurY);
+                    _client.InjectTouch(2, _joyTouchId, kx, ky);
+                }
+            }
+            else if (_joyTouchId != 0)
+            {
+                if (_joyReleaseGraceStartUtc == DateTime.MinValue)
+                {
+                    _joyReleaseGraceStartUtc = now;
+                    return;
+                }
+
+                if ((now - _joyReleaseGraceStartUtc).TotalMilliseconds < JoyReleaseGraceMs)
+                    return;
+
+                long oldId = _joyTouchId;
+                _joyTouchId = 0;
+                _joySnapFullNextTick = false;
+                _joyActiveDx = 0;
+                _joyActiveDy = 0;
+                _joyReleaseGraceStartUtc = DateTime.MinValue;
+                _joyLastUpUtc = now;
+
+                if (!_joyHasMoved)
+                {
+                    _joyCurX = _joyTargetX;
+                    _joyCurY = _joyTargetY;
+                    _client.InjectTouch(2, oldId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
+                }
+                _client.InjectTouch(1, oldId, (int)Math.Round(_joyCurX), (int)Math.Round(_joyCurY));
+            }
         }
 
         private bool TryScreenToClientNorm(int screenX, int screenY, out int normX, out int normY, bool clampOutside = false)
@@ -952,7 +1104,36 @@ namespace ScrcpyLauncher
                         return (IntPtr)1;
                 }
 
-                if (GetForegroundWindow() == _targetHwnd)
+                if (GetForegroundWindow() != _targetHwnd)
+                {
+                    // CRITICAL: Even if focus left target window, ALWAYS release any held mouse button on UP so no touch ever stays stuck!
+                    if (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP || msg == WM_MBUTTONUP || msg == WM_XBUTTONUP)
+                    {
+                        lock (_stateLock)
+                        {
+                            if (msg == WM_LBUTTONUP)
+                            {
+                                if (_leftTouchId != 0) { _client.InjectTouch(1, _leftTouchId, _profile.LeftClickX, _profile.LeftClickY); _leftTouchId = 0; }
+                                if (_manualTouchId != 0) { _client.InjectTouch(1, _manualTouchId, _manualLastX, _manualLastY); _manualTouchId = 0; }
+                            }
+                            else if (msg == WM_RBUTTONUP)
+                            {
+                                if (_wheelTouchId != 0 && _wheelVk == 2) { _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY)); _wheelTouchId = 0; _wheelVk = 0; _wheelAccumDx = 0; _wheelAccumDy = 0; }
+                                if (_rightTouchId != 0) { _client.InjectTouch(1, _rightTouchId, _profile.RightClickX, _profile.RightClickY); _rightTouchId = 0; }
+                            }
+                            else
+                            {
+                                int relVk = (msg == WM_MBUTTONUP) ? 4 : (((ms.mouseData >> 16) & 0xFFFF) == 1 ? 5 : 6);
+                                if (_wheelTouchId != 0 && _wheelVk == relVk) { _client.InjectTouch(1, _wheelTouchId, (int)Math.Round(_wheelCurX), (int)Math.Round(_wheelCurY)); _wheelTouchId = 0; _wheelVk = 0; }
+                                List<KeyBindItem> rel = null;
+                                foreach (var kv in _heldKeys) { if (kv.Key.VkCode == relVk) { if (rel == null) rel = new List<KeyBindItem>(); rel.Add(kv.Key); } }
+                                if (rel != null) { for (int r = 0; r < rel.Count; r++) { var it = rel[r]; _client.InjectTouch(1, _heldKeys[it], it.X, it.Y); _heldKeys.Remove(it); } }
+                            }
+                        }
+                    }
+                    return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+                }
+
                 {
 
                     // Extra mouse buttons (Middle=4, Mouse4=5, Mouse5=6) work as action keys in both modes
@@ -1036,13 +1217,13 @@ namespace ScrcpyLauncher
                                             _wheelRadius = matched.WheelRadius > 200 ? matched.WheelRadius : 1500;
                                             _wheelAccumDx = 0;
                                             _wheelAccumDy = 0;
-                                            _wheelTouchId = _nextTouchId++;
+                                            _wheelTouchId = SLOT_WHEEL;
                                             _client.InjectTouch(0, _wheelTouchId, matched.X, matched.Y);
                                         }
                                     }
                                     else if (!_heldKeys.ContainsKey(matched))
                                     {
-                                        long id = _nextTouchId++;
+                                        long id = GetActionKeySlot(matched);
                                         _heldKeys[matched] = id;
                                         _client.InjectTouch(0, id, matched.X, matched.Y);
                                     }
@@ -1072,13 +1253,13 @@ namespace ScrcpyLauncher
                                     _wheelRadius = 1500;
                                     _wheelAccumDx = 0;
                                     _wheelAccumDy = 0;
-                                    _wheelTouchId = _nextTouchId++;
+                                    _wheelTouchId = SLOT_WHEEL;
                                     _client.InjectTouch(0, _wheelTouchId, _profile.RightClickX, _profile.RightClickY);
                                 }
                             }
                             else if (_rightTouchId == 0)
                             {
-                                _rightTouchId = _nextTouchId++;
+                                _rightTouchId = SLOT_RIGHT;
                                 _client.InjectTouch(0, _rightTouchId, _profile.RightClickX, _profile.RightClickY);
                             }
                         }
@@ -1119,7 +1300,7 @@ namespace ScrcpyLauncher
                             {
                                 if (_leftTouchId == 0)
                                 {
-                                    _leftTouchId = _nextTouchId++;
+                                    _leftTouchId = SLOT_LEFT;
                                     _client.InjectTouch(0, _leftTouchId, _profile.LeftClickX, _profile.LeftClickY);
                                 }
                             }
@@ -1143,7 +1324,7 @@ namespace ScrcpyLauncher
                             {
                                 if (_profile.EnableRightClick && _rightTouchId == 0)
                                 {
-                                    _rightTouchId = _nextTouchId++;
+                                    _rightTouchId = SLOT_RIGHT;
                                     _client.InjectTouch(0, _rightTouchId, _profile.RightClickX, _profile.RightClickY);
                                 }
                             }
@@ -1170,7 +1351,7 @@ namespace ScrcpyLauncher
                         {
                             lock (_stateLock)
                             {
-                                _manualTouchId = _nextTouchId++;
+                                _manualTouchId = SLOT_MANUAL;
                                 _manualLastX = nx;
                                 _manualLastY = ny;
                                 _client.InjectTouch(0, _manualTouchId, nx, ny);
@@ -1227,7 +1408,7 @@ namespace ScrcpyLauncher
                 {
                     _camCurX = Math.Max(500, Math.Min(9500, _profile.CameraX));
                     _camCurY = Math.Max(500, Math.Min(9500, _profile.CameraY));
-                    _camTouchId = _nextTouchId++;
+                    _camTouchId = SLOT_CAMERA;
                     _client.InjectTouch(0, _camTouchId, (int)Math.Round(_camCurX), (int)Math.Round(_camCurY));
                 }
 
@@ -1241,7 +1422,7 @@ namespace ScrcpyLauncher
                     StopCameraFingerLocked();
                     _camCurX = Math.Max(500, Math.Min(9500, _profile.CameraX));
                     _camCurY = Math.Max(500, Math.Min(9500, _profile.CameraY));
-                    _camTouchId = _nextTouchId++;
+                    _camTouchId = SLOT_CAMERA;
                     _client.InjectTouch(0, _camTouchId, (int)Math.Round(_camCurX), (int)Math.Round(_camCurY));
                     nx = Math.Max(500, Math.Min(9500, _camCurX + sx));
                     ny = Math.Max(500, Math.Min(9500, _camCurY + sy));
