@@ -101,6 +101,12 @@ namespace ScrcpyLauncher
         public string Language { get; set; }
         public int DailyQuestClearedCount { get; set; }
         public string DailyQuestDateKey { get; set; }
+        public bool AudioBufferSafe { get; set; }
+        public bool RememberWindowBounds { get; set; }
+        public int LastWinX { get; set; }
+        public int LastWinY { get; set; }
+        public int LastWinW { get; set; }
+        public int LastWinH { get; set; }
 
         public LauncherSettings()
         {
@@ -134,6 +140,12 @@ namespace ScrcpyLauncher
             Language = "";
             DailyQuestClearedCount = 0;
             DailyQuestDateKey = "";
+            AudioBufferSafe = false;
+            RememberWindowBounds = true;
+            LastWinX = -32000;
+            LastWinY = -32000;
+            LastWinW = 0;
+            LastWinH = 0;
         }
 
         public static string GetSettingsPath()

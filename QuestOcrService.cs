@@ -30,6 +30,7 @@ namespace ScrcpyLauncher
         public string Progress { get; set; }
         public string RawFingerprint { get; set; }
 
+        [System.Web.Script.Serialization.ScriptIgnore]
         public string SummaryLine
         {
             get
@@ -997,6 +998,41 @@ namespace ScrcpyLauncher
                 return true;
 
             return false;
+        }
+
+        public static string GetActiveQuestsPath()
+        {
+            string dir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            if (string.IsNullOrEmpty(dir)) dir = AppDomain.CurrentDomain.BaseDirectory;
+            return Path.Combine(dir, "quests_active.json");
+        }
+
+        public static void SaveActiveQuests(List<QuestEntry> quests)
+        {
+            try
+            {
+                var ser = new System.Web.Script.Serialization.JavaScriptSerializer();
+                string json = ser.Serialize(quests ?? new List<QuestEntry>());
+                File.WriteAllText(GetActiveQuestsPath(), json, System.Text.Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        public static List<QuestEntry> LoadActiveQuests()
+        {
+            try
+            {
+                string path = GetActiveQuestsPath();
+                if (!File.Exists(path)) return new List<QuestEntry>();
+                string json = File.ReadAllText(path, System.Text.Encoding.UTF8);
+                var ser = new System.Web.Script.Serialization.JavaScriptSerializer();
+                var loaded = ser.Deserialize<List<QuestEntry>>(json);
+                return loaded ?? new List<QuestEntry>();
+            }
+            catch
+            {
+                return new List<QuestEntry>();
+            }
         }
 
         public static void AppendToQuestLog(QuestEntry e)

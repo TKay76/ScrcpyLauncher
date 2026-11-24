@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "Scrcpy Launcher v1.5.9 — Android 미러링", "Scrcpy Launcher v1.5.9 — Android Mirroring", "Scrcpy Launcher v1.5.9 — Android ミラーリング");
+            A("win_title", "Scrcpy Launcher v1.6.0 — Android 미러링", "Scrcpy Launcher v1.6.0 — Android Mirroring", "Scrcpy Launcher v1.6.0 — Android ミラーリング");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -117,8 +117,10 @@ namespace ScrcpyLauncher
             A("chk_stay_awake", "절전 방지 (-w)", "Stay Awake (-w)", "スリープ防止 (-w)");
             A("chk_low_latency", "저지연 인코딩", "Low Latency", "低遅延エンコード");
             A("chk_no_audio", "소리 끄기", "Mute Audio", "音声オフ");
+            A("chk_audio_safe", "오디오 안정화", "Smooth Audio", "音割れ軽減");
             A("chk_fullscreen", "전체화면 시작 (-f)", "Start Fullscreen (-f)", "フルスクリーン起動 (-f)");
             A("chk_always_on_top", "항상 위에 (실시간)", "Always on Top", "常に手前に表示");
+            A("chk_remember_win", "창 위치·크기 기억", "Remember Window", "ウィンドウ位置記憶");
             A("chk_gamepad_kb_assist", "게임패드 모드에서도 키보드 보조 매핑 사용 (실시간 적용 · WASD/마우스 제외)", "Enable keyboard assist mapping in Gamepad mode (live · no WASD/mouse)", "ゲームパッドモードでもキーボード補助マッピングを使用 (即時反映・WASD/マウス除外)");
             A("chk_fps_overlay", "화면 FPS 오버레이", "FPS Overlay", "FPS オーバーレイ");
             A("lbl_rec_folder", "캡처 · 녹화 저장 폴더", "Capture / Record Folder", "スクショ・録画保存先");

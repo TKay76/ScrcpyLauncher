@@ -65,6 +65,22 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll")]
         private static extern bool IsIconic(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        private static extern bool ClientToScreen(IntPtr hWnd, ref WIN32POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WIN32POINT
+        {
+            public int X;
+            public int Y;
+        }
+
+        private const int GWL_STYLE = -16;
+        private const int WS_CAPTION = 0x00C00000;
+
         [StructLayout(LayoutKind.Sequential)]
         private struct RECT
         {
@@ -178,9 +194,15 @@ namespace ScrcpyLauncher
         private CheckBox _chkStayAwake;
         private CheckBox _chkLowLatency;
         private CheckBox _chkNoAudio;
+        private CheckBox _chkAudioSafe;
         private CheckBox _chkFullscreen;
         private CheckBox _chkAlwaysOnTop;
+        private CheckBox _chkRememberWin;
         private CheckBox _chkPrintFps;
+        private int _trackedWinX = -32000;
+        private int _trackedWinY = -32000;
+        private int _trackedWinW = 0;
+        private int _trackedWinH = 0;
 
         private TextBox _txtRecordFolder;
         private Button _btnBrowseRecord;
@@ -355,6 +377,10 @@ namespace ScrcpyLauncher
             Loaded += OnLoaded;
             SourceInitialized += OnSourceInitialized;
             Closing += OnClosing;
+
+            _scannedQuests.Clear();
+            _scannedQuests.AddRange(QuestOcrService.LoadActiveQuests());
+            RefreshQuestPlannerUi();
 
             _isInitializing = false;
             UpdateUiStates();
@@ -622,7 +648,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.5.9' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.6.0' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -781,8 +807,10 @@ namespace ScrcpyLauncher
         <CheckBox x:Name='chkStayAwake' Content='절전 방지 (-w)'/>
         <CheckBox x:Name='chkLowLatency' Content='저지연 인코딩'/>
         <CheckBox x:Name='chkNoAudio' Content='소리 끄기'/>
+        <CheckBox x:Name='chkAudioSafe' Content='오디오 안정화'/>
         <CheckBox x:Name='chkFullscreen' Content='전체화면 시작 (-f)'/>
         <CheckBox x:Name='chkAlwaysOnTop' Content='항상 위에 (실시간)'/>
+        <CheckBox x:Name='chkRememberWin' Content='창 위치·크기 기억'/>
         <CheckBox x:Name='chkPrintFps' Content='화면 FPS 오버레이'/>
       </WrapPanel>
 
@@ -1144,8 +1172,10 @@ namespace ScrcpyLauncher
             _chkStayAwake = (CheckBox)root.FindName("chkStayAwake");
             _chkLowLatency = (CheckBox)root.FindName("chkLowLatency");
             _chkNoAudio = (CheckBox)root.FindName("chkNoAudio");
+            _chkAudioSafe = (CheckBox)root.FindName("chkAudioSafe");
             _chkFullscreen = (CheckBox)root.FindName("chkFullscreen");
             _chkAlwaysOnTop = (CheckBox)root.FindName("chkAlwaysOnTop");
+            _chkRememberWin = (CheckBox)root.FindName("chkRememberWin");
             _chkPrintFps = (CheckBox)root.FindName("chkPrintFps");
 
             _txtRecordFolder = (TextBox)root.FindName("txtRecordFolder");
@@ -1240,8 +1270,10 @@ namespace ScrcpyLauncher
             AttachGuide(_chkStayAwake, "절전 방지 (-w)", "연결 중 스마트폰이 자동으로 잠기지 않도록 유지합니다.");
             AttachGuide(_chkLowLatency, "저지연 인코딩", "하드웨어 인코더에 low-latency=1 옵션을 전달해 PC 화면이 반박자 밀리는 현상을 줄여줍니다.");
             AttachGuide(_chkNoAudio, "소리 끄기", "오디오 전송을 끕니다. 블루투스 이어폰을 폰에 직접 연결해 쓰거나, 오디오 버퍼로 인한 지연 여부를 테스트할 때 유용합니다.");
+            AttachGuide(_chkAudioSafe, "오디오 안정화 (--audio-buffer=120)", "소리가 째지거나 지직거리며 끊길 때 오디오 버퍼에 여유(120ms)를 주어 사운드 깨짐을 방지합니다.");
             AttachGuide(_chkFullscreen, "전체화면 시작 (-f)", "실행 즉시 PC 모니터 전체화면으로 띄웁니다. 실행 중에도 Alt + F 키로 언제든 전환할 수 있습니다.");
             AttachGuide(_chkAlwaysOnTop, "항상 위에 (실시간)", "미러링 창을 항상 다른 창 위에 고정합니다. 미러링 도중에도 체크를 켜거나 끄면 즉시 반영됩니다.");
+            AttachGuide(_chkRememberWin, "창 위치 · 크기 기억", "창모드에서 마지막으로 두었던 미러링 창의 모니터 위치와 크기를 기억해 다음 실행 때 똑같은 자리에 띄워줍니다.");
             AttachGuide(_chkPrintFps, "화면 FPS 오버레이", "미러링 창 좌측 상단에 클릭을 방해하지 않는 투명 FPS 표시기를 띄웁니다. FPS 수치는 로그창을 어지럽히지 않고 오버레이와 배지에만 표시됩니다.");
             AttachGuide(_chkGamepadKbAssist, "게임패드 모드 키보드 보조 매핑", "게임패드 모드에서도 키보드 액션 매핑(예: 모험단 춤 방향키)을 함께 사용할 수 있습니다. 마우스 시점과 클릭은 패드/일반 조작을 방해하지 않도록 제외됩니다.");
             AttachGuide(_btnScreenshot, "화면 캡처 (.png)", "연결된 기기의 현재 화면(가상 디스플레이 실행 중이면 해당 화면 포함)을 PNG 이미지로 즉시 저장합니다.");
@@ -1479,10 +1511,14 @@ namespace ScrcpyLauncher
             _chkLowLatency.Unchecked += (s, e) => onOptChanged();
             _chkNoAudio.Checked += (s, e) => onOptChanged();
             _chkNoAudio.Unchecked += (s, e) => onOptChanged();
+            _chkAudioSafe.Checked += (s, e) => onOptChanged();
+            _chkAudioSafe.Unchecked += (s, e) => onOptChanged();
             _chkFullscreen.Checked += (s, e) => onOptChanged();
             _chkFullscreen.Unchecked += (s, e) => onOptChanged();
             _chkAlwaysOnTop.Checked += (s, e) => { if (!_isInitializing) ApplyAlwaysOnTopLive(true); onOptChanged(); };
             _chkAlwaysOnTop.Unchecked += (s, e) => { if (!_isInitializing) ApplyAlwaysOnTopLive(false); onOptChanged(); };
+            _chkRememberWin.Checked += (s, e) => onOptChanged();
+            _chkRememberWin.Unchecked += (s, e) => onOptChanged();
             _chkPrintFps.Checked += (s, e) => onOptChanged();
             _chkPrintFps.Unchecked += (s, e) => onOptChanged();
             _chkGamepadKbAssist.Checked += (s, e) =>
@@ -1599,8 +1635,10 @@ namespace ScrcpyLauncher
             _chkStayAwake.Content = Loc.T("chk_stay_awake");
             _chkLowLatency.Content = Loc.T("chk_low_latency");
             _chkNoAudio.Content = Loc.T("chk_no_audio");
+            _chkAudioSafe.Content = Loc.T("chk_audio_safe");
             _chkFullscreen.Content = Loc.T("chk_fullscreen");
             _chkAlwaysOnTop.Content = Loc.T("chk_always_on_top");
+            _chkRememberWin.Content = Loc.T("chk_remember_win");
             _chkPrintFps.Content = Loc.T("chk_fps_overlay");
             SetTextByName(root, "lblRecFolder", Loc.T("lbl_rec_folder"));
             _btnBrowseRecord.Content = Loc.T("btn_browse");
@@ -2265,7 +2303,16 @@ namespace ScrcpyLauncher
             if (_chkStayAwake.IsChecked == true) args.Add("-w");
             if (_chkLowLatency.IsChecked == true) args.Add("--video-codec-options=low-latency=1");
             if (_chkNoAudio.IsChecked == true) args.Add("--no-audio");
+            else if (_chkAudioSafe.IsChecked == true) args.Add("--audio-buffer=120");
             if (_chkFullscreen.IsChecked == true) args.Add("-f");
+            else if (_chkRememberWin.IsChecked == true && _settings != null && _settings.LastWinW >= 300 && _settings.LastWinH >= 200 &&
+                     IsBoundsOnAnyScreen(_settings.LastWinX, _settings.LastWinY, _settings.LastWinW, _settings.LastWinH))
+            {
+                args.Add("--window-x=" + _settings.LastWinX);
+                args.Add("--window-y=" + _settings.LastWinY);
+                args.Add("--window-width=" + _settings.LastWinW);
+                args.Add("--window-height=" + _settings.LastWinH);
+            }
             if (_chkAlwaysOnTop.IsChecked == true) args.Add("--always-on-top");
             if (_chkPrintFps.IsChecked == true) args.Add("--print-fps");
 
@@ -2460,6 +2507,7 @@ namespace ScrcpyLauncher
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
+                        PersistTrackedWindowBounds();
                         AppendLog("[종료] scrcpy가 종료되었습니다.");
                         _bdFpsBadge.Visibility = Visibility.Collapsed;
                         SetQuestHotKeyActive(false);
@@ -2471,6 +2519,8 @@ namespace ScrcpyLauncher
                     }));
                 };
 
+                _trackedWinW = 0;
+                _trackedWinH = 0;
                 _activeDisplayId = "";
                 _autoKeymapTriggered = false;
                 _scrcpyProcess.Start();
@@ -2533,10 +2583,10 @@ namespace ScrcpyLauncher
                 }
 
                 bool savedOk = false;
+                string finalSavedPath = fullPath;
                 if (capturedFromWindow)
                 {
                     savedOk = true;
-                    AppendLog("[캡처] 미러링 화면 저장 완료: " + fullPath);
                 }
                 else
                 {
@@ -2544,7 +2594,7 @@ namespace ScrcpyLauncher
                     if (res.Item1)
                     {
                         savedOk = true;
-                        AppendLog("[캡처] 기기 화면 저장 완료: " + res.Item2);
+                        finalSavedPath = res.Item2;
                     }
                     else
                     {
@@ -2552,17 +2602,25 @@ namespace ScrcpyLauncher
                     }
                 }
 
-                if (savedOk && _scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                if (savedOk)
                 {
-                    if (_keymapOverlay == null)
+                    bool copiedClip = TryCopyPngToClipboard(finalSavedPath);
+                    AppendLog((copiedClip ? "[캡처] 저장 및 클립보드 복사 완료: " : "[캡처] 화면 저장 완료: ") + finalSavedPath);
+
+                    if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
                     {
-                        _keymapOverlay = new KeymapOverlayWindow();
-                        _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
-                        _keymapOverlay.SetShowHints(false);
+                        if (_keymapOverlay == null)
+                        {
+                            _keymapOverlay = new KeymapOverlayWindow();
+                            _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
+                            _keymapOverlay.SetShowHints(false);
+                        }
+                        _keymapOverlay.ShowToast(copiedClip
+                            ? ("📸 스샷 저장 + 클립보드 복사됨 (" + fileName + ")")
+                            : ("📸 스크린샷 저장됨 (" + fileName + ")"));
+                        if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
+                        SyncFpsOverlay();
                     }
-                    _keymapOverlay.ShowToast("📸 스크린샷 저장됨 (" + fileName + ")");
-                    if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
-                    SyncFpsOverlay();
                 }
             }
             finally
@@ -2814,7 +2872,7 @@ namespace ScrcpyLauncher
                 if (line.IndexOf("FPS counter stopped", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     _bdFpsBadge.Visibility = Visibility.Collapsed;
-                    HideFpsOverlay();
+                    if (_fpsOverlay != null && _fpsOverlay.IsVisible) _fpsOverlay.Hide();
                     return;
                 }
 
@@ -2852,6 +2910,25 @@ namespace ScrcpyLauncher
                 _scrcpyProcess.Refresh();
                 IntPtr targetHwnd = _scrcpyProcess.MainWindowHandle;
                 IntPtr launcherHwnd = new WindowInteropHelper(this).Handle;
+
+                // Track windowed (non-minimized, non-fullscreen) client bounds for Remember Window Pos/Size
+                if (targetHwnd != IntPtr.Zero && !IsIconic(targetHwnd) && (GetWindowLong(targetHwnd, GWL_STYLE) & WS_CAPTION) != 0)
+                {
+                    RECT crc;
+                    WIN32POINT org = new WIN32POINT { X = 0, Y = 0 };
+                    if (GetClientRect(targetHwnd, out crc) && ClientToScreen(targetHwnd, ref org))
+                    {
+                        int cw = crc.Right - crc.Left;
+                        int ch = crc.Bottom - crc.Top;
+                        if (cw >= 300 && ch >= 200)
+                        {
+                            _trackedWinX = org.X;
+                            _trackedWinY = org.Y;
+                            _trackedWinW = cw;
+                            _trackedWinH = ch;
+                        }
+                    }
+                }
 
                 int vidW = _activeDisplayWidth > 0 ? _activeDisplayWidth : (_controlClient != null ? _controlClient.ScreenWidth : 0);
                 int vidH = _activeDisplayHeight > 0 ? _activeDisplayHeight : (_controlClient != null ? _controlClient.ScreenHeight : 0);
@@ -3333,6 +3410,8 @@ namespace ScrcpyLauncher
 
         private void RefreshQuestPlannerUi()
         {
+            if (!_isInitializing)
+                QuestOcrService.SaveActiveQuests(_scannedQuests);
             _txtQuestCount.Text = string.Format("보유: {0} / 10", _scannedQuests.Count);
 
             var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests);
@@ -3619,8 +3698,59 @@ namespace ScrcpyLauncher
             _txtQuestDaily.Text = string.Format("오늘 완료: {0}건", _settings.DailyQuestClearedCount);
         }
 
+        private static bool TryCopyPngToClipboard(string pngPath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(pngPath) || !File.Exists(pngPath)) return false;
+                byte[] bytes = File.ReadAllBytes(pngPath);
+                using (var ms = new MemoryStream(bytes))
+                {
+                    var bmp = new System.Windows.Media.Imaging.BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bmp.StreamSource = ms;
+                    bmp.EndInit();
+                    bmp.Freeze();
+                    Clipboard.SetImage(bmp);
+                }
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsBoundsOnAnyScreen(int x, int y, int w, int h)
+        {
+            try
+            {
+                int cx = x + w / 2;
+                int cy = y + Math.Min(h / 2, 60);
+                foreach (var scr in System.Windows.Forms.Screen.AllScreens)
+                {
+                    if (scr.WorkingArea.Contains(cx, cy))
+                        return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private void PersistTrackedWindowBounds()
+        {
+            if (_settings == null || _trackedWinW < 300 || _trackedWinH < 200) return;
+            _settings.LastWinX = _trackedWinX;
+            _settings.LastWinY = _trackedWinY;
+            _settings.LastWinW = _trackedWinW;
+            _settings.LastWinH = _trackedWinH;
+            _settings.Save();
+        }
+
         private void StopScrcpy()
         {
+            PersistTrackedWindowBounds();
             try
             {
                 if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
@@ -3672,8 +3802,10 @@ namespace ScrcpyLauncher
             _chkStayAwake.IsChecked = _settings.StayAwake;
             _chkLowLatency.IsChecked = _settings.LowLatency;
             _chkNoAudio.IsChecked = _settings.NoAudio;
+            _chkAudioSafe.IsChecked = _settings.AudioBufferSafe;
             _chkFullscreen.IsChecked = _settings.Fullscreen;
             _chkAlwaysOnTop.IsChecked = _settings.AlwaysOnTop;
+            _chkRememberWin.IsChecked = _settings.RememberWindowBounds;
             _chkPrintFps.IsChecked = _settings.PrintFps;
             _chkGamepadKbAssist.IsChecked = _settings.GamepadKeyboardAssist;
             EnsureDailyQuestReset();
@@ -3724,8 +3856,10 @@ namespace ScrcpyLauncher
             _settings.StayAwake = _chkStayAwake.IsChecked == true;
             _settings.LowLatency = _chkLowLatency.IsChecked == true;
             _settings.NoAudio = _chkNoAudio.IsChecked == true;
+            _settings.AudioBufferSafe = _chkAudioSafe.IsChecked == true;
             _settings.Fullscreen = _chkFullscreen.IsChecked == true;
             _settings.AlwaysOnTop = _chkAlwaysOnTop.IsChecked == true;
+            _settings.RememberWindowBounds = _chkRememberWin.IsChecked == true;
             _settings.PrintFps = _chkPrintFps.IsChecked == true;
             _settings.GamepadKeyboardAssist = _chkGamepadKbAssist.IsChecked == true;
             _settings.RecordFolder = _txtRecordFolder.Text.Trim();
