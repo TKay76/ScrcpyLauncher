@@ -123,6 +123,14 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+        private const uint KEYEVENTF_KEYUP = 0x0002;
+
         private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
         private const uint SWP_NOMOVE = 0x0002;
@@ -133,11 +141,15 @@ namespace ScrcpyLauncher
         private const int WM_HOTKEY = 0x0312;
         private const int HOTKEY_QUEST_SCAN = 9001;
         private const int HOTKEY_SCREENSHOT = 9002;
+        private const int HOTKEY_CHAT = 9003;
+        private const uint VK_F2 = 0x71;
         private const uint VK_F8 = 0x77;
         private const uint VK_F12 = 0x7B;
         private const uint RIM_TYPEHID = 2;
         private bool _questHotKeyRegistered = false;
         private bool _screenshotHotKeyRegistered = false;
+        private bool _chatHotKeyRegistered = false;
+        private ChatInputWindow _chatWindow;
         private bool _isCapturingScreenshot = false;
         private bool _isConnectingKeymap = false;
         private DateTime _lastShareShotUtc = DateTime.MinValue;
@@ -334,16 +346,6 @@ namespace ScrcpyLauncher
                 _chkKmHints.IsChecked = next;
                 if (_keymapOverlay != null) _keymapOverlay.SetShowHints(next);
                 AppendLog(next ? "[키 매핑] 화면 키 힌트 ON (F1)" : "[키 매핑] 화면 키 힌트 OFF (F1)");
-            }));
-            _hookEngine.PauseToggled += (paused) => Dispatcher.BeginInvoke(new Action(() =>
-            {
-                string msg = Loc.T(paused ? "toast_chat_on" : "toast_chat_off");
-                AppendLog("[키 매핑] " + msg);
-                if (_keymapOverlay != null)
-                {
-                    _keymapOverlay.ShowToast(msg);
-                    SyncFpsOverlay();
-                }
             }));
             _hookEngine.ProfileSwitchRequested += (idx) => Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -648,7 +650,7 @@ namespace ScrcpyLauncher
     <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
       <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
       <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.6.0' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
+        <TextBlock Text='v1.6.1' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
       </Border>
       <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
     </StackPanel>
@@ -1772,6 +1774,13 @@ namespace ScrcpyLauncher
                         BtnScreenshot_Click(null, null);
                     return IntPtr.Zero;
                 }
+                if (id == HOTKEY_CHAT)
+                {
+                    handled = true;
+                    if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                        ToggleChatBar();
+                    return IntPtr.Zero;
+                }
             }
             if (msg == WM_INPUT)
             {
@@ -1903,6 +1912,8 @@ namespace ScrcpyLauncher
                         _questHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_QUEST_SCAN, 0, VK_F8);
                     if (!_screenshotHotKeyRegistered)
                         _screenshotHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_SCREENSHOT, 0, VK_F12);
+                    if (!_chatHotKeyRegistered)
+                        _chatHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_CHAT, 0, VK_F2);
                 }
                 else
                 {
@@ -1915,6 +1926,11 @@ namespace ScrcpyLauncher
                     {
                         UnregisterHotKey(hwnd, HOTKEY_SCREENSHOT);
                         _screenshotHotKeyRegistered = false;
+                    }
+                    if (_chatHotKeyRegistered)
+                    {
+                        UnregisterHotKey(hwnd, HOTKEY_CHAT);
+                        _chatHotKeyRegistered = false;
                     }
                 }
             }
@@ -1942,6 +1958,11 @@ namespace ScrcpyLauncher
             {
                 try { _cursorHider.Close(); } catch { }
                 _cursorHider = null;
+            }
+            if (_chatWindow != null)
+            {
+                try { _chatWindow.Close(); } catch { }
+                _chatWindow = null;
             }
             if (_hookEngine != null) _hookEngine.Dispose();
             if (_controlClient != null) _controlClient.Dispose();
@@ -2320,18 +2341,14 @@ namespace ScrcpyLauncher
             if (mode == "keymap")
             {
                 args.Add("--mouse=disabled");
-                args.Add("--keyboard=uhid");
             }
             else if (mode == "gamepad")
             {
                 args.Add("-G");
-                args.Add("--keyboard=uhid");
                 args.Add("--mouse-bind=-hsn:++++");
             }
-            else
-            {
-                args.Add("--keyboard=uhid");
-            }
+            // Note: --keyboard=uhid is intentionally omitted so Android tablets (Galaxy Tab DeX / Lenovo Y700 / Xiaoxin ZUI)
+            // never auto-switch to PC/DeX mode, Alt+O works natively, and Korean chat works cleanly via the F2 mini chat bar!
 
             if (useVd)
             {
@@ -3643,6 +3660,77 @@ namespace ScrcpyLauncher
                 outerGrid.Children.Add(sp);
                 card.Child = outerGrid;
                 _pnlQuestPlans.Children.Add(card);
+            }
+        }
+
+        private void ToggleChatBar()
+        {
+            if (_scrcpyProcess == null || _scrcpyProcess.HasExited) return;
+            _scrcpyProcess.Refresh();
+            IntPtr hwnd = _scrcpyProcess.MainWindowHandle;
+
+            if (_chatWindow == null)
+            {
+                _chatWindow = new ChatInputWindow();
+                _chatWindow.TextSubmitted += (text) => SendChatTextToGameAsync(text);
+                _chatWindow.Cancelled += () =>
+                {
+                    if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                    {
+                        try { _scrcpyProcess.Refresh(); SetForegroundWindow(_scrcpyProcess.MainWindowHandle); } catch { }
+                    }
+                };
+            }
+
+            if (_chatWindow.IsVisible)
+            {
+                _chatWindow.Hide();
+                if (hwnd != IntPtr.Zero) SetForegroundWindow(hwnd);
+                return;
+            }
+
+            if (_hookEngine != null && _hookEngine.IsActive)
+                _hookEngine.ReleaseForOverlay();
+
+            _chatWindow.OpenForTarget(hwnd);
+        }
+
+        private async void SendChatTextToGameAsync(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return;
+            try
+            {
+                IntPtr hwnd = IntPtr.Zero;
+                if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
+                {
+                    _scrcpyProcess.Refresh();
+                    hwnd = _scrcpyProcess.MainWindowHandle;
+                }
+
+                if (_controlClient != null && _controlClient.IsConnected && _controlClient.SetClipboardAndPaste(text))
+                {
+                    if (hwnd != IntPtr.Zero) SetForegroundWindow(hwnd);
+                    AppendLog("[한글 채팅] 전송 완료: " + text);
+                    return;
+                }
+
+                // Fallback for Gamepad / Normal mode (when auxiliary control client is not connected):
+                // Set PC clipboard and send Ctrl+V to scrcpy window so scrcpy pastes UTF-8 directly into Android!
+                Clipboard.SetText(text);
+                if (hwnd != IntPtr.Zero)
+                {
+                    SetForegroundWindow(hwnd);
+                    await Task.Delay(55);
+                    keybd_event(0x11, 0, 0, UIntPtr.Zero);               // Ctrl down
+                    keybd_event(0x56, 0, 0, UIntPtr.Zero);               // V down
+                    keybd_event(0x56, 0, KEYEVENTF_KEYUP, UIntPtr.Zero); // V up
+                    keybd_event(0x11, 0, KEYEVENTF_KEYUP, UIntPtr.Zero); // Ctrl up
+                }
+                AppendLog("[한글 채팅] 붙여넣기 전송 완료: " + text);
+            }
+            catch (Exception ex)
+            {
+                AppendLog("[한글 채팅 오류] " + ex.Message);
             }
         }
 

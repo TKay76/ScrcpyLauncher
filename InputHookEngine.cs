@@ -107,7 +107,6 @@ namespace ScrcpyLauncher
         public event Action<string> StatusMessage;
         public event Action HintToggleRequested;
         public event Action<int> ProfileSwitchRequested;
-        public event Action<bool> PauseToggled;
 
         public bool IsPaused { get { return _isPaused; } }
         public bool KeyboardOnlyAssist { get; set; }
@@ -463,6 +462,12 @@ namespace ScrcpyLauncher
             }
         }
 
+        public void ReleaseForOverlay()
+        {
+            SetCameraLock(false);
+            ReleaseAllInputs();
+        }
+
         private void ReleaseAllInputs()
         {
             lock (_stateLock)
@@ -617,23 +622,11 @@ namespace ScrcpyLauncher
                         return (IntPtr)1;
                     }
 
-                    // F2 (without modifiers) toggles Chat / Typing pause mode (lets Korean/English keyboard type into game!)
+                    // F2 is handled globally by MainWindow (HOTKEY_CHAT) to open the mini Korean chat bar in ALL modes!
                     if (vk == 113 && curMods == 0)
-                    {
-                        if (isUp)
-                        {
-                            _isPaused = !_isPaused;
-                            if (_isPaused)
-                            {
-                                SetCameraLock(false);
-                                ReleaseAllInputs();
-                            }
-                            if (PauseToggled != null) PauseToggled(_isPaused);
-                        }
-                        return (IntPtr)1;
-                    }
+                        return CallNextHookEx(_kbHook, nCode, wParam, lParam);
 
-                    // While paused (Chat / Typing mode), still release any held touch on UP, then pass all keys straight through to Android UHID!
+                    // While paused, still release any held touch on UP, then pass keys through
                     if (_isPaused)
                     {
                         if (isUp) ReleaseKeyOnUpUnconditional(vk);
@@ -698,6 +691,12 @@ namespace ScrcpyLauncher
 
                         bool isJoyKey = (vk == NormalizeVk(_profile.JoyUpVk) || vk == NormalizeVk(_profile.JoyDownVk) ||
                                          vk == NormalizeVk(_profile.JoyLeftVk) || vk == NormalizeVk(_profile.JoyRightVk));
+                        // Block Alt+WASD from leaking to Android/game (prevents accidental W screen blur during Alt camera toggle)
+                        if (isJoyKey && isDown && (curMods & 4) != 0 && FindMatchingBind(vk, curMods) == null)
+                        {
+                            _camToggleUsedAsModifier = true;
+                            return (IntPtr)1;
+                        }
                         if (isJoyKey && (isUp || (curMods & 5) == 0))
                         {
                             bool changed = false;

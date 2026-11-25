@@ -297,6 +297,31 @@ namespace ScrcpyLauncher
             }
         }
 
+        // SC_CONTROL_MSG_TYPE_SET_CLIPBOARD (type = 9): sends UTF-8 Korean/text directly to Android and pastes immediately!
+        public bool SetClipboardAndPaste(string text)
+        {
+            if (!IsConnected || string.IsNullOrEmpty(text)) return false;
+            try
+            {
+                byte[] textBytes = Encoding.UTF8.GetBytes(text);
+                byte[] buf = new byte[14 + textBytes.Length];
+                buf[0] = 9; // SC_CONTROL_MSG_TYPE_SET_CLIPBOARD
+                // bytes 1..8: sequence = 0 (no ack)
+                buf[9] = 1; // paste = true
+                WriteInt32BE(buf, 10, textBytes.Length);
+                Buffer.BlockCopy(textBytes, 0, buf, 14, textBytes.Length);
+
+                var q = _sendQueue;
+                if (q != null && !q.IsAddingCompleted)
+                {
+                    q.TryAdd(buf);
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static int ReadInt32BE(byte[] b, int o)
         {
             return (b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3];

@@ -122,11 +122,11 @@ namespace ScrcpyLauncher
             TurnScreenOff = true;
             StayAwake = true;
             UhidGamepad = false;
-            LowLatency = true;
+            LowLatency = false;
             NoAudio = false;
             Fullscreen = false;
             AlwaysOnTop = false;
-            PrintFps = true;
+            PrintFps = false;
             DisableRightClickBack = true;
             KeymapExclusiveInput = true;
             GamepadKeyboardAssist = false;

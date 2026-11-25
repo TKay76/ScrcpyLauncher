@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "Scrcpy Launcher v1.6.0 — Android 미러링", "Scrcpy Launcher v1.6.0 — Android Mirroring", "Scrcpy Launcher v1.6.0 — Android ミラーリング");
+            A("win_title", "Scrcpy Launcher v1.6.1 — Android 미러링", "Scrcpy Launcher v1.6.1 — Android Mirroring", "Scrcpy Launcher v1.6.1 — Android ミラーリング");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -270,7 +270,7 @@ namespace ScrcpyLauncher
                 "[ 실행 중 주요 단축키 ]\n\n" +
                 "• Alt  :  시점 회전 모드 ON / OFF (커서 잠금/해제)\n" +
                 "• F1  :  키 매핑 화면 힌트 켜기 / 끄기\n" +
-                "• F2  :  채팅 모드 토글 (키 매핑 일시정지 · 한글 타자 가능)\n" +
+                "• F2  :  미니 한글 채팅창 열기 (한글 입력 후 Enter로 즉시 전송 · 전 모드 지원)\n" +
                 "• F8  :  현재 퀘스트 화면 수집 (퀘스트 플래너 · 전 모드 지원)\n" +
                 "• F12 / Xbox Share  :  즉시 화면 캡처 (.png)\n" +
                 "• Ctrl + F1 ~ F9  :  무기별 프로파일 즉시 전환\n" +

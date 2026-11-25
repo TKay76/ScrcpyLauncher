@@ -38,6 +38,7 @@ $outExe = Join-Path $dir "ScrcpyLauncher.exe"
   "$dir\ScrcpyControlClient.cs" `
   "$dir\InputHookEngine.cs" `
   "$dir\KeymapOverlayWindow.cs" `
+  "$dir\ChatInputWindow.cs" `
   "$dir\QuestOcrService.cs" `
   "$dir\MainWindow.cs"
 
