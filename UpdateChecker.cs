@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
@@ -17,11 +18,12 @@ namespace ScrcpyLauncher
         public string LatestTag { get; set; }
         public string ReleaseUrl { get; set; }
         public string ExeDownloadUrl { get; set; }
+        public string ExeSha256 { get; set; }
     }
 
     public static class UpdateChecker
     {
-        public const string CurrentVersion = "2.0.2";
+        public const string CurrentVersion = "2.0.3";
         public const string RepoOwner = "TKay76";
         public const string RepoName = "ScrcpyLauncher";
         public const string ReleasesPageUrl = "https://github.com/TKay76/ScrcpyLauncher/releases";
@@ -31,7 +33,7 @@ namespace ScrcpyLauncher
         {
             return Task.Run(() =>
             {
-                var info = new UpdateInfo { HasUpdate = false, LatestTag = "", ReleaseUrl = ReleasesPageUrl, ExeDownloadUrl = "" };
+                var info = new UpdateInfo { HasUpdate = false, LatestTag = "", ReleaseUrl = ReleasesPageUrl, ExeDownloadUrl = "", ExeSha256 = "" };
                 try
                 {
                     ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
@@ -72,6 +74,12 @@ namespace ScrcpyLauncher
                                     {
                                         if (asset.ContainsKey("browser_download_url") && asset["browser_download_url"] != null)
                                             info.ExeDownloadUrl = asset["browser_download_url"].ToString().Trim();
+                                        if (asset.ContainsKey("digest") && asset["digest"] != null)
+                                        {
+                                            string dg = asset["digest"].ToString().Trim();
+                                            if (dg.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                                                info.ExeSha256 = dg.Substring(7).Trim().ToLowerInvariant();
+                                        }
                                         break;
                                     }
                                 }
@@ -87,7 +95,20 @@ namespace ScrcpyLauncher
             });
         }
 
-        public static Task<Tuple<bool, string>> DownloadAndApplyUpdateAsync(string downloadUrl)
+        public static string ComputeFileSha256(string filePath)
+        {
+            using (var sha = SHA256.Create())
+            using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                byte[] hash = sha.ComputeHash(fs);
+                var sb = new StringBuilder(hash.Length * 2);
+                for (int i = 0; i < hash.Length; i++)
+                    sb.Append(hash[i].ToString("x2"));
+                return sb.ToString();
+            }
+        }
+
+        public static Task<Tuple<bool, string>> DownloadAndApplyUpdateAsync(string downloadUrl, string expectedSha256 = null)
         {
             return Task.Run(() =>
             {
@@ -129,6 +150,22 @@ namespace ScrcpyLauncher
                         return Tuple.Create(false, "다운로드된 파일이 유효한 실행 파일이 아닙니다.");
                     }
 
+                    // Verify SHA-256 digest from GitHub API when present (gracefully compatible if absent)
+                    if (!string.IsNullOrWhiteSpace(expectedSha256))
+                    {
+                        string expected = expectedSha256.Trim();
+                        if (expected.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
+                            expected = expected.Substring(7).Trim();
+                        string actual = ComputeFileSha256(newExe);
+                        if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                        {
+                            try { File.Delete(newExe); } catch { }
+                            return Tuple.Create(false, "다운로드된 파일의 SHA-256 해시가 일치하지 않습니다.");
+                        }
+                    }
+
+                    string escNew = newExe.Replace("%", "%%");
+                    string escCur = curExe.Replace("%", "%%");
                     string batPath = Path.Combine(Path.GetTempPath(), "scrcpy_launcher_update_" + Guid.NewGuid().ToString("N").Substring(0, 8) + ".bat");
                     string batContent =
                         "@echo off\r\n" +
@@ -136,7 +173,7 @@ namespace ScrcpyLauncher
                         "timeout /t 1 /nobreak >nul\r\n" +
                         "set /a tries=0\r\n" +
                         ":retry\r\n" +
-                        "move /Y \"" + newExe + "\" \"" + curExe + "\" >nul 2>&1\r\n" +
+                        "move /Y \"" + escNew + "\" \"" + escCur + "\" >nul 2>&1\r\n" +
                         "if errorlevel 1 (\r\n" +
                         "  set /a tries+=1\r\n" +
                         "  if %tries% LSS 15 (\r\n" +
@@ -145,7 +182,7 @@ namespace ScrcpyLauncher
                         "  )\r\n" +
                         "  exit /b 1\r\n" +
                         ")\r\n" +
-                        "start \"\" \"" + curExe + "\"\r\n" +
+                        "start \"\" \"" + escCur + "\"\r\n" +
                         "del \"%~f0\"\r\n";
 
                     File.WriteAllText(batPath, batContent, new UTF8Encoding(false));

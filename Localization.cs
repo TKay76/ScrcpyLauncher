@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "HuntLink v2.0.2 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.2 — MHO PC Launcher", "HuntLink v2.0.2 — MHO PC ランチャー");
+            A("win_title", "HuntLink v2.0.3 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.3 — MHO PC Launcher", "HuntLink v2.0.3 — MHO PC ランチャー");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -128,6 +128,8 @@ namespace ScrcpyLauncher
             A("q_btn_clear", "비우기", "Clear", "全消去");
             A("q_daily_fmt", "오늘 완료: {0}건", "Cleared Today: {0}", "本日クリア: {0}件");
             A("q_count_fmt", "보유: {0} / 10", "Held: {0} / 10", "所持: {0} / 10");
+            A("q_dup_skip", "이미 수집된 퀘스트입니다 ({0}/10): {1}", "Already in list ({0}/10): {1}", "既に収集済みです ({0}/10): {1}");
+            A("q_full_skip", "보유 한도(10/10)가 가득 찼습니다 (신규 제목 학습은 반영됨)", "Quest list full (10/10) — title DB learned", "所持上限(10/10)です（新規タイトル学習は完了）");
             A("q_home_meta_fmt", "  ·  오늘 완료: {0}건  ·  보유: {1} / 10", "  ·  Today: {0}  ·  Held: {1} / 10", "  ·  本日: {0}件  ·  所持: {1} / 10");
             A("q_daily_tip", "매일 한국시간 오전 5시에 자동 초기화됩니다.", "Resets automatically every day at 05:00 KST.", "毎日 5:00 (KST) に自動リセットされます。");
             A("q_empty_banner", "게임에서 퀘스트 창을 열고 [F7] 목록 일괄 스캔 또는 [F8] 개별 수집을 누르세요.", "Open the in-game quest list and press [F7] Batch Scan or [F8] Single Scan.", "ゲーム内のクエスト一覧を開き、[F7] 一括スキャンまたは [F8] 個別スキャンを押してください。");
@@ -204,8 +206,8 @@ namespace ScrcpyLauncher
             A("g_aot_b", "미러링 창을 항상 다른 창 위에 고정합니다. 미러링 도중에도 체크를 켜거나 끄면 즉시 반영됩니다.", "Keeps the mirroring window above all other windows. Toggling takes effect immediately even while running.", "ミラーリング画面を常に最前面に固定します。実行中でもチェックのオン/オフが即座に反映されます。");
             A("g_remwin_t", "창 위치 · 크기 기억", "Remember Window Bounds", "ウィンドウ位置・サイズ記憶");
             A("g_remwin_b", "창모드에서 마지막으로 두었던 미러링 창의 모니터 위치와 크기를 기억해 다음 실행 때 똑같은 자리에 띄워줍니다.", "Remembers your last windowed position and size and restores it on the next launch.", "ウィンドウモード時の最後の位置とサイズを記憶し、次回起動時に同じ位置へ復元します。");
-            A("g_pfps_t", "화면 FPS 오버레이", "On-Screen FPS Overlay", "画面 FPS オーバーレイ");
-            A("g_pfps_b", "미러링 창 좌측 상단에 클릭을 방해하지 않는 투명 FPS 표시기를 띄웁니다. FPS 수치는 로그창을 어지럽히지 않고 오버레이와 배지에만 표시됩니다.", "Displays a click-through transparent FPS counter in the top-left corner of the mirroring window.", "ミラーリング画面の左上にクリック透過のFPS表示を重ねます。ログ欄は汚さずオーバーレイにのみ表示します。");
+            A("g_pfps_t", "실시간 FPS 표시 (제목표시줄)", "Live FPS in Title Bar", "タイトルバー FPS 表示");
+            A("g_pfps_b", "투명 오버레이 창을 띄우지 않고 미러링 창 제목표시줄에 실시간 FPS를 표시합니다. (화면 가림·스터터링 0%, 실행 중 Alt+I 토글 가능)", "Displays live FPS directly in the mirroring window's title bar without spawning an overlay window (0% stutter, toggle anytime with Alt+I).", "オーバーレイを使わずミラーリング画面のタイトルバーにリアルタイムFPSを表示します（カクつき0%・Alt+Iで切替可）。");
             A("g_gpkb_t", "게임패드 모드 키보드 보조 매핑", "Gamepad Mode Keyboard Assist", "ゲームパッド時キーボード補助");
             A("g_gpkb_b", "게임패드 모드에서도 키보드 액션 매핑(예: 모험단 춤 방향키)을 함께 사용할 수 있습니다. 마우스 시점과 클릭은 패드/일반 조작을 방해하지 않도록 제외됩니다.", "Allows keyboard action mappings (e.g. arrow keys) alongside a physical gamepad. Mouse look/clicks stay disabled to avoid interference.", "ゲームパッドモードでもキーボードのアクション割当（方向キー等）を併用できます。マウス操作は干渉防止のため除外されます。");
             A("g_shot_t", "화면 캡처 (.png)", "Capture Screenshot (.png)", "画面キャプチャ (.png)");
@@ -299,7 +301,7 @@ namespace ScrcpyLauncher
             A("chk_always_on_top", "항상 위에 (실시간)", "Always on Top", "常に手前に表示");
             A("chk_remember_win", "창 위치·크기 기억", "Remember Window", "ウィンドウ位置記憶");
             A("chk_gamepad_kb_assist", "게임패드 모드에서도 키보드 보조 매핑 사용 (실시간 적용 · WASD/마우스 제외)", "Enable keyboard assist mapping in Gamepad mode (live · no WASD/mouse)", "ゲームパッドモードでもキーボード補助マッピングを使用 (即時反映・WASD/マウス除外)");
-            A("chk_fps_overlay", "화면 FPS 오버레이", "FPS Overlay", "FPS オーバーレイ");
+            A("chk_fps_overlay", "실시간 FPS 표시 (제목표시줄)", "Show Live FPS (Title Bar)", "FPS表示 (タイトルバー)");
             A("lbl_rec_folder", "캡처 · 녹화 저장 폴더", "Capture / Record Folder", "スクショ・録画保存先");
             A("btn_browse", "폴더 선택", "Browse", "選択");
             A("btn_open_folder", "폴더 열기", "Open", "開く");

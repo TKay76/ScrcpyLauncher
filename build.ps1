@@ -8,6 +8,7 @@ $outExe = Join-Path $dir "ScrcpyLauncher.exe"
 & $csc `
   /nologo `
   /codepage:65001 `
+  /platform:x64 `
   /target:winexe `
   /optimize+ `
   /win32manifest:"$dir\app.manifest" `

@@ -214,7 +214,22 @@ namespace ScrcpyLauncher
             const string remoteTmp = "/data/local/tmp/_scrcpy_launcher_cap.png";
             try
             {
-                // Save to device temp file first so stderr/stdout warnings (e.g. multiple displays on foldables) never corrupt PNG bytes
+                // 1. If Virtual Display is active, try screencap -d {displayId} first and verify pulled file size >= 1024 bytes
+                //    (Android 11-14 sometimes exits 0 while producing a 0-byte file on virtual displays!)
+                if (!string.IsNullOrWhiteSpace(displayId) && displayId != "0")
+                {
+                    var vdCap = await RunAsync(AdbPath, string.Format("-s \"{0}\" shell screencap -d {1} -p {2}", serial, displayId, remoteTmp), 8000);
+                    if (vdCap.ExitCode == 0)
+                    {
+                        var vdPull = await RunAsync(AdbPath, string.Format("-s \"{0}\" pull {1} \"{2}\"", serial, remoteTmp, outputPath), 8000);
+                        await RunAsync(AdbPath, string.Format("-s \"{0}\" shell rm -f {1}", serial, remoteTmp), 4000);
+                        if (vdPull.ExitCode == 0 && File.Exists(outputPath) && new FileInfo(outputPath).Length >= 1024)
+                            return Tuple.Create(true, outputPath);
+                    }
+                    try { if (File.Exists(outputPath)) File.Delete(outputPath); } catch { }
+                }
+
+                // 2. Standard fallback (default display)
                 var capRes = await RunAsync(AdbPath, string.Format("-s \"{0}\" shell screencap -p {1}", serial, remoteTmp), 8000);
                 if (capRes.ExitCode != 0)
                     return Tuple.Create(false, "기기 화면 캡처 실패: " + capRes.Combined.Trim());
@@ -222,7 +237,7 @@ namespace ScrcpyLauncher
                 var pullRes = await RunAsync(AdbPath, string.Format("-s \"{0}\" pull {1} \"{2}\"", serial, remoteTmp, outputPath), 8000);
                 await RunAsync(AdbPath, string.Format("-s \"{0}\" shell rm -f {1}", serial, remoteTmp), 4000);
 
-                if (pullRes.ExitCode != 0 || !File.Exists(outputPath) || new FileInfo(outputPath).Length < 64)
+                if (pullRes.ExitCode != 0 || !File.Exists(outputPath) || new FileInfo(outputPath).Length < 1024)
                     return Tuple.Create(false, "캡처 파일 전송 실패: " + pullRes.Combined.Trim());
 
                 return Tuple.Create(true, outputPath);

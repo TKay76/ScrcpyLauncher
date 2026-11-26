@@ -351,9 +351,9 @@ namespace ScrcpyLauncher
 
             try
             {
-                var res = await adb.RunAsync(adb.AdbPath, string.Format("-s {0} shell \"dumpsys wifi | grep -m 1 'Link speed'\"", serial), 2500);
+                var res = await adb.RunAsync(adb.AdbPath, string.Format("-s \"{0}\" shell \"cmd wifi status 2>/dev/null; dumpsys wifi | grep -m 1 'Link speed'\"", serial), 2500);
                 string txt = (res.StdOut ?? "") + "\n" + (res.StdErr ?? "");
-                var mSpeed = Regex.Match(txt, @"Link speed:\s*(\d+)\s*Mbps", RegexOptions.IgnoreCase);
+                var mSpeed = Regex.Match(txt, @"(?:Link speed|Tx Link speed):\s*(\d+)\s*Mbps", RegexOptions.IgnoreCase);
                 var mFreq = Regex.Match(txt, @"Frequency:\s*(\d+)\s*MHz", RegexOptions.IgnoreCase);
 
                 int speed = mSpeed.Success ? int.Parse(mSpeed.Groups[1].Value) : 0;
@@ -395,7 +395,7 @@ namespace ScrcpyLauncher
 
             try
             {
-                var res = await adb.RunAsync(adb.AdbPath, string.Format("-s {0} shell dumpsys battery", dev.Serial), 2500);
+                var res = await adb.RunAsync(adb.AdbPath, string.Format("-s \"{0}\" shell dumpsys battery", dev.Serial), 2500);
                 string txt = res.StdOut ?? "";
                 if (string.IsNullOrWhiteSpace(txt)) return null;
 

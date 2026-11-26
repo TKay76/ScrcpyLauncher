@@ -33,12 +33,14 @@ namespace ScrcpyLauncher
         private InputHookEngine _hookEngine;
         private List<KeymapProfile> _keymapProfiles = new List<KeymapProfile>();
         private KeymapProfile _activeProfile;
-        private string _detectedScrcpyVersion = "5.0.1";
+        private string _detectedScrcpyVersion = "3.2";
         private int _activeDisplayWidth = 1920;
         private int _activeDisplayHeight = 1080;
         private int _pendingNewKeyVk = 0;
         private int _pendingNewKeyMods = 0;
         private bool _autoKeymapTriggered = false;
+        private bool _pendingWinBoundsRestore = false;
+        private bool _isStoppingRecording = false;
         private Process _scrcpyProcess;
         private Process _recordProcess;
         private string _currentRecordPath = "";
@@ -60,10 +62,19 @@ namespace ScrcpyLauncher
         private static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
         [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
         private static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
 
         [DllImport("user32.dll")]
         private static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsZoomed(IntPtr hWnd);
 
         [DllImport("user32.dll")]
         private static extern bool ClientToScreen(IntPtr hWnd, ref WIN32POINT lpPoint);
@@ -141,6 +152,7 @@ namespace ScrcpyLauncher
         private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
         private const uint SWP_NOMOVE = 0x0002;
         private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOZORDER = 0x0004;
         private const uint SWP_NOACTIVATE = 0x0010;
 
         private const int WM_INPUT = 0x00FF;
@@ -1280,10 +1292,35 @@ namespace ScrcpyLauncher
             catch { }
         }
 
+        private bool IsOurOrMirrorWindowFocused()
+        {
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero) return false;
+            IntPtr launcherHwnd = new WindowInteropHelper(this).Handle;
+            if (launcherHwnd != IntPtr.Zero && fg == launcherHwnd) return true;
+            if (_chatWindow != null && _chatWindow.IsVisible)
+            {
+                IntPtr chatHwnd = new WindowInteropHelper(_chatWindow).Handle;
+                if (chatHwnd != IntPtr.Zero && fg == chatHwnd) return true;
+            }
+            if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
+            {
+                try
+                {
+                    IntPtr targetHwnd = _scrcpyProcess.MainWindowHandle;
+                    if (targetHwnd != IntPtr.Zero && fg == targetHwnd) return true;
+                }
+                catch { }
+            }
+            return false;
+        }
+
         private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             if (msg == WM_HOTKEY)
             {
+                if (!IsOurOrMirrorWindowFocused())
+                    return IntPtr.Zero;
                 int id = wParam.ToInt32();
                 if (id == HOTKEY_QUEST_SCAN)
                 {
@@ -1354,8 +1391,13 @@ namespace ScrcpyLauncher
 
                                     if (isShare && (DateTime.UtcNow - _lastShareShotUtc).TotalMilliseconds > 800)
                                     {
-                                        _lastShareShotUtc = DateTime.UtcNow;
-                                        BtnScreenshot_Click(null, null);
+                                        IntPtr targetHwnd = IntPtr.Zero;
+                                        try { _scrcpyProcess.Refresh(); targetHwnd = _scrcpyProcess.MainWindowHandle; } catch { }
+                                        if (targetHwnd != IntPtr.Zero && GetForegroundWindow() == targetHwnd)
+                                        {
+                                            _lastShareShotUtc = DateTime.UtcNow;
+                                            BtnScreenshot_Click(null, null);
+                                        }
                                     }
                                 }
                             }
@@ -1415,7 +1457,7 @@ namespace ScrcpyLauncher
             _btnUpdate.Content = Loc.T("btn_updating");
             AppendLog("[Update] Downloading " + _updateInfo.LatestTag + "...");
 
-            var res = await UpdateChecker.DownloadAndApplyUpdateAsync(_updateInfo.ExeDownloadUrl);
+            var res = await UpdateChecker.DownloadAndApplyUpdateAsync(_updateInfo.ExeDownloadUrl, _updateInfo.ExeSha256);
             if (!res.Item1)
             {
                 _btnUpdate.IsEnabled = true;
@@ -1504,7 +1546,7 @@ namespace ScrcpyLauncher
             if (_hookEngine != null) _hookEngine.Dispose();
             if (_controlClient != null) _controlClient.Dispose();
             SaveSettingsFromUi();
-            StopRecording();
+            StopRecordingSync(3000);
             StopScrcpy();
         }
 
@@ -1914,7 +1956,7 @@ namespace ScrcpyLauncher
             }
 
             _cmbApps.Items.Clear();
-            var noneItem = new AppItem { Name = "(선택 안 함 — 현재 화면 그대로)", PackageName = "" };
+            var noneItem = new AppItem { Name = Loc.T("app_none"), PackageName = "" };
             _cmbApps.Items.Add(noneItem);
 
             int selectIdx = 0;
@@ -2052,14 +2094,8 @@ namespace ScrcpyLauncher
             if (_chkNoAudio.IsChecked == true) args.Add("--no-audio");
             else if (_chkAudioSafe.IsChecked == true) args.Add("--audio-buffer=120");
             if (_chkFullscreen.IsChecked == true) args.Add("-f");
-            else if (_chkRememberWin.IsChecked == true && _settings != null && _settings.LastWinW >= 300 && _settings.LastWinH >= 200 &&
-                     IsBoundsOnAnyScreen(_settings.LastWinX, _settings.LastWinY, _settings.LastWinW, _settings.LastWinH))
-            {
-                args.Add("--window-x=" + _settings.LastWinX);
-                args.Add("--window-y=" + _settings.LastWinY);
-                args.Add("--window-width=" + _settings.LastWinW);
-                args.Add("--window-height=" + _settings.LastWinH);
-            }
+            // Note: Windowed bounds restore is applied via Win32 SetWindowPos once the window is visible
+            // so physical pixel dimensions never inflate on 125%/150%/200% or mixed-DPI multi-monitor setups!
             if (_chkAlwaysOnTop.IsChecked == true) args.Add("--always-on-top");
             if (_chkPrintFps.IsChecked == true) args.Add("--print-fps");
 
@@ -2268,14 +2304,18 @@ namespace ScrcpyLauncher
 
                 _trackedWinW = 0;
                 _trackedWinH = 0;
+                _pendingWinBoundsRestore = (_chkFullscreen.IsChecked != true &&
+                                            _chkRememberWin.IsChecked == true &&
+                                            _settings != null &&
+                                            _settings.LastWinW >= 300 &&
+                                            _settings.LastWinH >= 200 &&
+                                            IsBoundsOnAnyScreen(_settings.LastWinX, _settings.LastWinY, _settings.LastWinW, _settings.LastWinH));
                 _activeDisplayId = "";
                 _autoKeymapTriggered = false;
                 _scrcpyProcess.Start();
                 _scrcpyProcess.BeginOutputReadLine();
                 _scrcpyProcess.BeginErrorReadLine();
-                SetQuestHotKeyActive(true);
-                if (_chkPrintFps.IsChecked == true)
-                    EnsureFpsOverlay();
+                SetQuestHotKeyActive(IsOurOrMirrorWindowFocused());
                 _overlayTimer.Start();
                 UpdateUiStates();
             }
@@ -2285,6 +2325,20 @@ namespace ScrcpyLauncher
                 _scrcpyProcess = null;
                 UpdateUiStates();
             }
+        }
+
+        private static string BuildUniqueMediaPath(string dir, string prefix, string ext, out string outFileName)
+        {
+            string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+            outFileName = string.Format("{0}_{1}{2}", prefix, stamp, ext);
+            string full = Path.Combine(dir, outFileName);
+            int n = 2;
+            while (File.Exists(full))
+            {
+                outFileName = string.Format("{0}_{1}_{2}{3}", prefix, stamp, n++, ext);
+                full = Path.Combine(dir, outFileName);
+            }
+            return full;
         }
 
         private async void BtnScreenshot_Click(object sender, RoutedEventArgs e)
@@ -2309,8 +2363,8 @@ namespace ScrcpyLauncher
                 return;
             }
 
-            string fileName = string.Format("screenshot_{0:yyyyMMdd_HHmmss}.png", DateTime.Now);
-            string fullPath = Path.Combine(saveDir, fileName);
+            string fileName;
+            string fullPath = BuildUniqueMediaPath(saveDir, "screenshot", ".png", out fileName);
 
             _isCapturingScreenshot = true;
             _btnScreenshot.IsEnabled = false;
@@ -2406,10 +2460,11 @@ namespace ScrcpyLauncher
             }
         }
 
-        private void BtnRecordToggle_Click(object sender, RoutedEventArgs e)
+        private async void BtnRecordToggle_Click(object sender, RoutedEventArgs e)
         {
+            if (_isStoppingRecording) return;
             if (_recordProcess != null && !_recordProcess.HasExited)
-                StopRecording();
+                await StopRecordingAsync();
             else
                 StartRecording();
         }
@@ -2434,8 +2489,8 @@ namespace ScrcpyLauncher
                 return;
             }
 
-            string fileName = string.Format("record_{0:yyyyMMdd_HHmmss}.mp4", DateTime.Now);
-            _currentRecordPath = Path.Combine(saveDir, fileName);
+            string recFileName;
+            _currentRecordPath = BuildUniqueMediaPath(saveDir, "record", ".mp4", out recFileName);
 
             var recArgs = new List<string>();
             recArgs.Add(string.Format("-s \"{0}\"", dev.Serial));
@@ -2515,39 +2570,74 @@ namespace ScrcpyLauncher
             }
         }
 
-        private void StopRecording()
+        private void FinalizeRecordProcessCore(Process proc, int waitMs)
         {
-            if (_recordProcess == null) return;
-            var proc = _recordProcess;
-            _recordTimer.Stop();
-
+            if (proc == null) return;
             try
             {
                 if (!proc.HasExited)
                 {
-                    AppendLog("[녹화] 녹화를 마무리하고 저장하는 중...");
                     bool gracefullyStopped = false;
+                    bool attached = false;
                     try
                     {
-                        if (AttachConsole((uint)proc.Id))
+                        attached = AttachConsole((uint)proc.Id);
+                        if (attached)
                         {
                             SetConsoleCtrlHandler(null, true);
                             GenerateConsoleCtrlEvent(0, 0);
-                            gracefullyStopped = proc.WaitForExit(3000);
-                            FreeConsole();
-                            SetConsoleCtrlHandler(null, false);
+                            gracefullyStopped = proc.WaitForExit(waitMs);
                         }
                     }
                     catch { }
+                    finally
+                    {
+                        if (attached)
+                        {
+                            try { FreeConsole(); } catch { }
+                            try { SetConsoleCtrlHandler(null, false); } catch { }
+                        }
+                    }
 
                     if (!gracefullyStopped && !proc.HasExited)
                     {
-                        proc.Kill();
-                        proc.WaitForExit(1000);
+                        try { proc.Kill(); } catch { }
+                        try { proc.WaitForExit(1000); } catch { }
                     }
                 }
             }
             catch { }
+        }
+
+        private async Task StopRecordingAsync()
+        {
+            if (_recordProcess == null || _isStoppingRecording) return;
+            var proc = _recordProcess;
+            _isStoppingRecording = true;
+            _recordTimer.Stop();
+            _btnRecordToggle.IsEnabled = false;
+            AppendLog("[녹화] 녹화를 마무리하고 저장하는 중...");
+            try
+            {
+                await Task.Run(() => FinalizeRecordProcessCore(proc, 6000));
+            }
+            finally
+            {
+                _recordProcess = null;
+                _isStoppingRecording = false;
+                UpdateUiStates();
+            }
+        }
+
+        private void StopRecordingSync(int waitMs)
+        {
+            if (_recordProcess == null) return;
+            var proc = _recordProcess;
+            _recordTimer.Stop();
+            try
+            {
+                FinalizeRecordProcessCore(proc, waitMs);
+            }
             finally
             {
                 _recordProcess = null;
@@ -2608,13 +2698,9 @@ namespace ScrcpyLauncher
                         _txtFpsBadge.Text = "FPS: " + fps;
                         _liveFpsText = fps.ToString();
                         UpdateMirrorWindowTitle();
-
-                        EnsureFpsOverlay();
                         if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
-                        string extra = m.Groups[2].Success ? m.Groups[2].Value : "";
-                        _fpsOverlay.UpdateFps(fps, extra);
                     }
-                    // Keep the log window clean by not printing repetitive FPS lines
+                    // Keep the log window clean by not printing repetitive FPS lines (displayed in Title Bar & log badge instead)
                     return;
                 }
 
@@ -2696,6 +2782,8 @@ namespace ScrcpyLauncher
                 _liveFpsText = "";
                 _lastAppliedMirrorTitle = "";
                 _lastAutoMuteState = false;
+                _pendingWinBoundsRestore = false;
+                SetQuestHotKeyActive(false);
                 HideFpsOverlay();
                 return;
             }
@@ -2707,6 +2795,9 @@ namespace ScrcpyLauncher
                 if (targetHwnd != IntPtr.Zero)
                     UpdateMirrorWindowTitle(targetHwnd);
                 IntPtr launcherHwnd = new WindowInteropHelper(this).Handle;
+
+                // ② Dynamically register F2/F7/F8/F12 hotkeys ONLY while scrcpy / HuntLink / ChatInputWindow is focused!
+                SetQuestHotKeyActive(IsOurOrMirrorWindowFocused());
 
                 // F3: Auto-Mute scrcpy audio when switching to another window (Alt+Tab)
                 if (_chkAutoMuteBg != null && _chkAutoMuteBg.IsChecked == true && targetHwnd != IntPtr.Zero)
@@ -2722,21 +2813,35 @@ namespace ScrcpyLauncher
                     }
                 }
 
-                // Track windowed (non-minimized, non-fullscreen) client bounds for Remember Window Pos/Size
-                if (targetHwnd != IntPtr.Zero && !IsIconic(targetHwnd) && (GetWindowLong(targetHwnd, GWL_STYLE) & WS_CAPTION) != 0)
+                // ④ DPI-invariant physical window bounds restore & tracking (uses outer GetWindowRect + SetWindowPos)
+                if (targetHwnd != IntPtr.Zero && IsWindowVisible(targetHwnd) && !IsIconic(targetHwnd) && !IsZoomed(targetHwnd) &&
+                    (GetWindowLong(targetHwnd, GWL_STYLE) & WS_CAPTION) != 0)
                 {
-                    RECT crc;
-                    WIN32POINT org = new WIN32POINT { X = 0, Y = 0 };
-                    if (GetClientRect(targetHwnd, out crc) && ClientToScreen(targetHwnd, ref org))
+                    if (_pendingWinBoundsRestore)
                     {
-                        int cw = crc.Right - crc.Left;
-                        int ch = crc.Bottom - crc.Top;
-                        if (cw >= 300 && ch >= 200)
+                        _pendingWinBoundsRestore = false;
+                        if (_chkFullscreen.IsChecked != true && _settings != null &&
+                            _settings.LastWinW >= 300 && _settings.LastWinH >= 200 &&
+                            IsBoundsOnAnyScreen(_settings.LastWinX, _settings.LastWinY, _settings.LastWinW, _settings.LastWinH))
                         {
-                            _trackedWinX = org.X;
-                            _trackedWinY = org.Y;
-                            _trackedWinW = cw;
-                            _trackedWinH = ch;
+                            SetWindowPos(targetHwnd, IntPtr.Zero, _settings.LastWinX, _settings.LastWinY,
+                                _settings.LastWinW, _settings.LastWinH, SWP_NOZORDER | SWP_NOACTIVATE);
+                        }
+                    }
+                    else
+                    {
+                        RECT wrc;
+                        if (GetWindowRect(targetHwnd, out wrc))
+                        {
+                            int ww = wrc.Right - wrc.Left;
+                            int wh = wrc.Bottom - wrc.Top;
+                            if (ww >= 300 && wh >= 200)
+                            {
+                                _trackedWinX = wrc.Left;
+                                _trackedWinY = wrc.Top;
+                                _trackedWinW = ww;
+                                _trackedWinH = wh;
+                            }
                         }
                     }
                 }
@@ -2744,13 +2849,12 @@ namespace ScrcpyLauncher
                 int vidW = _activeDisplayWidth > 0 ? _activeDisplayWidth : (_controlClient != null ? _controlClient.ScreenWidth : 0);
                 int vidH = _activeDisplayHeight > 0 ? _activeDisplayHeight : (_controlClient != null ? _controlClient.ScreenHeight : 0);
 
-                if (_fpsOverlay != null && _chkPrintFps.IsChecked == true)
-                    _fpsOverlay.SyncToTargetWindow(targetHwnd, launcherHwnd);
-
                 if (_hookEngine != null && _hookEngine.IsActive)
                 {
                     _hookEngine.SetTargetWindow(targetHwnd);
                     _hookEngine.SetVideoSize(vidW, vidH);
+                    if (_hookEngine.RefreshCameraClipRect() && _cursorHider != null && targetHwnd != IntPtr.Zero)
+                        _cursorHider.ShowAtScreenPoint(_hookEngine.CenterScreenX, _hookEngine.CenterScreenY, targetHwnd);
                     _hookEngine.CheckFocusSafety();
                 }
 
@@ -3131,22 +3235,41 @@ namespace ScrcpyLauncher
                 MessageBox.Show("왼쪽 입력 칸을 클릭한 뒤 매핑할 키보드 키(또는 조합키/마우스 4·5)를 눌러주세요.", "안내", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            var item = new KeyBindItem
+            // Replace existing key bind if same (Modifiers + VkCode) already exists so duplicates never shadow each other
+            KeyBindItem existingKey = null;
+            for (int i = 0; i < _activeProfile.Keys.Count; i++)
             {
-                VkCode = _pendingNewKeyVk,
-                Modifiers = _pendingNewKeyMods,
-                Label = (_txtKmNewLabel.Text ?? "").Trim(),
-                X = 5000,
-                Y = 5000,
-                IsWheelDrag = _chkKmNewWheel.IsChecked == true,
-                WheelRadius = 1500
-            };
-            _activeProfile.Keys.Add(item);
+                var k = _activeProfile.Keys[i];
+                if (k.Modifiers == _pendingNewKeyMods && k.VkCode == _pendingNewKeyVk)
+                {
+                    existingKey = k;
+                    break;
+                }
+            }
+            if (existingKey != null)
+            {
+                existingKey.Label = (_txtKmNewLabel.Text ?? "").Trim();
+                existingKey.IsWheelDrag = _chkKmNewWheel.IsChecked == true;
+            }
+            else
+            {
+                var item = new KeyBindItem
+                {
+                    VkCode = _pendingNewKeyVk,
+                    Modifiers = _pendingNewKeyMods,
+                    Label = (_txtKmNewLabel.Text ?? "").Trim(),
+                    X = 5000,
+                    Y = 5000,
+                    IsWheelDrag = _chkKmNewWheel.IsChecked == true,
+                    WheelRadius = 1500
+                };
+                _activeProfile.Keys.Add(item);
+            }
             RefreshKeyListBox();
             if (_keymapOverlay != null) _keymapOverlay.Redraw();
             _pendingNewKeyVk = 0;
             _pendingNewKeyMods = 0;
-            _txtKmNewKey.Text = "클릭 후 키 누름";
+            _txtKmNewKey.Text = Loc.T("hint_new_key");
             _txtKmNewKey.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#64748B"));
             _txtKmNewLabel.Text = "";
             _chkKmNewWheel.IsChecked = false;
@@ -3187,9 +3310,40 @@ namespace ScrcpyLauncher
                 }
 
                 QuestEntry entry = res.Item1;
-                _scannedQuests.Add(entry);
+                // Always learn unknown quest titles FIRST even if already 10/10 or duplicate!
                 QuestOcrService.LearnQuestTitle(entry);
                 QuestOcrService.AppendToQuestLog(entry);
+
+                string skipToast = null;
+                for (int i = 0; i < _scannedQuests.Count; i++)
+                {
+                    if (QuestOcrService.IsLikelyDuplicate(_scannedQuests[i], entry))
+                    {
+                        skipToast = Loc.F("q_dup_skip", _scannedQuests.Count, string.IsNullOrEmpty(entry.Title) ? entry.ObjectiveText : entry.Title);
+                        break;
+                    }
+                }
+                if (skipToast == null && _scannedQuests.Count >= 10)
+                {
+                    skipToast = Loc.T("q_full_skip");
+                }
+
+                if (skipToast != null)
+                {
+                    AppendLog("[퀘스트] " + skipToast);
+                    if (_keymapOverlay == null)
+                    {
+                        _keymapOverlay = new KeymapOverlayWindow();
+                        _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
+                        _keymapOverlay.SetShowHints(false);
+                    }
+                    _keymapOverlay.ShowToast(skipToast);
+                    if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
+                    SyncFpsOverlay();
+                    return;
+                }
+
+                _scannedQuests.Add(entry);
                 RefreshQuestPlannerUi();
 
                 string spPart = string.IsNullOrEmpty(entry.Species) ? "" : (" · " + entry.Species);

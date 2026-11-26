@@ -229,9 +229,10 @@ namespace ScrcpyLauncher
                         return item;
                 }
             }
-            // If Alt is held and no explicit Alt+Key combo matched, do NOT fall back to plain keys
-            // so Windows (Alt+Tab, Alt+F4) and scrcpy (Alt+F, Alt+O, Alt+I) shortcuts work natively!
-            if ((curMods & 4) != 0)
+            // If Ctrl (1) or Alt (4) is held and no explicit combo matched, do NOT fall back to plain keys
+            // so Ctrl+C/V/X/Z, Windows (Alt+Tab, Alt+F4), and scrcpy (Alt+F, Alt+O, Alt+I) shortcuts work natively!
+            // (Shift (2) still falls back cleanly so skills work while holding Shift to sprint!)
+            if ((curMods & 5) != 0)
                 return null;
 
             // 2. Fallback to plain key match (Modifiers == 0) — works during Shift sprint too!
@@ -380,6 +381,25 @@ namespace ScrcpyLauncher
             }
         }
 
+        private RECT _lastClipRect;
+
+        public bool RefreshCameraClipRect()
+        {
+            if (!_active || !_cameraLocked || _targetHwnd == IntPtr.Zero) return false;
+            RECT rc;
+            if (!GetWindowRect(_targetHwnd, out rc)) return false;
+            if (rc.Left == _lastClipRect.Left && rc.Top == _lastClipRect.Top &&
+                rc.Right == _lastClipRect.Right && rc.Bottom == _lastClipRect.Bottom)
+                return false;
+
+            _lastClipRect = rc;
+            _centerScreenX = (rc.Left + rc.Right) / 2;
+            _centerScreenY = (rc.Top + rc.Bottom) / 2;
+            SetCursorPos(_centerScreenX, _centerScreenY);
+            ClipCursor(ref rc);
+            return true;
+        }
+
         private void SetCameraLock(bool locked)
         {
             if (_cameraLocked == locked) return;
@@ -390,6 +410,7 @@ namespace ScrcpyLauncher
                 RECT rc;
                 if (GetWindowRect(_targetHwnd, out rc))
                 {
+                    _lastClipRect = rc;
                     _centerScreenX = (rc.Left + rc.Right) / 2;
                     _centerScreenY = (rc.Top + rc.Bottom) / 2;
                     SetCursorPos(_centerScreenX, _centerScreenY);

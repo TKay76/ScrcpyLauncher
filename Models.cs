@@ -132,7 +132,7 @@ namespace ScrcpyLauncher
             NoAudio = false;
             Fullscreen = false;
             AlwaysOnTop = false;
-            PrintFps = false;
+            PrintFps = true; // Title-bar FPS has 0% overlay/DWM overhead!
             DisableRightClickBack = true;
             KeymapExclusiveInput = true;
             GamepadKeyboardAssist = false;

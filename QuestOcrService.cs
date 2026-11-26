@@ -205,56 +205,6 @@ namespace ScrcpyLauncher
             return string.Join(", ", names.ToArray());
         }
 
-        public static readonly Dictionary<string, string> SpeciesMonstersMap = new Dictionary<string, string>
-        {
-            { "아룡종", "도스쟈그라스, 도스기르오스, 토비카가치, 오도가론" },
-            { "조룡종", "쿠루루야크, 푸케푸케, 치치야크" },
-            { "어룡종", "쥬라토도스" },
-            { "수룡종", "볼보로스, 안쟈나프, 라도발킨" },
-            { "비룡종", "리오레이아, 리오레이아 아종, 리오레우스, 디아블로스, 디아블로스 아종, 파오우르무, 레이기에나" },
-            { "고룡종", "루가 에알다, 크샬다오라" },
-            { "융광종", "" } // 모든 몬스터의 변이 개체이므로 목록 생략
-        };
-
-        public static readonly Dictionary<string, string> RadiantSpeciesMonstersMap = new Dictionary<string, string>
-        {
-            { "아룡종", "융광종 도스쟈그라스, 융광종 도스기르오스, 융광종 토비카가치, 융광종 오도가론" },
-            { "조룡종", "융광종 쿠루루야크, 융광종 푸케푸케, 융광종 치치야크" },
-            { "어룡종", "융광종 쥬라토도스" },
-            { "수룡종", "융광종 볼보로스, 융광종 안쟈나프" },
-            { "비룡종", "융광종 리오레이아, 융광종 리오레우스, 융광종 디아블로스, 융광종 파오우르무, 융광종 레이기에나" }
-        };
-
-        public static string GetSpeciesMonsters(string species, bool radiantOnly = false, bool includeRadiant = false)
-        {
-            if (string.IsNullOrEmpty(species)) return "";
-            string val;
-            if (radiantOnly)
-                return RadiantSpeciesMonstersMap.TryGetValue(species, out val) ? val : "";
-
-            string baseList = SpeciesMonstersMap.TryGetValue(species, out val) ? val : "";
-            if (includeRadiant)
-            {
-                string radList;
-                if (RadiantSpeciesMonstersMap.TryGetValue(species, out radList) && !string.IsNullOrEmpty(radList))
-                    return string.IsNullOrEmpty(baseList) ? radList : (baseList + ", " + radList);
-            }
-            return baseList;
-        }
-
-        public static string GetSpeciesGuideText()
-        {
-            return
-                "[ 몬스터헌터 아웃랜더스 종족별 몬스터 & 약점 ]\n\n" +
-                "• 아룡종 : 도스쟈그라스(불), 도스기르오스(물), 토비카가치(물), 오도가론(얼음)\n\n" +
-                "• 조룡종 : 쿠루루야크(물), 푸케푸케(번개), 치치야크(얼음/번개)\n\n" +
-                "• 어룡종 : 쥬라토도스(물/번개)\n\n" +
-                "• 수룡종 : 볼보로스(불), 안쟈나프(물), 라도발킨(용)\n\n" +
-                "• 비룡종 : 리오레이아(용), 리오레이아 아종(용), 리오레우스(용), 디아블로스(얼음), 디아블로스 아종, 파오우르무(불), 레이기에나(번개)\n\n" +
-                "• 고룡종 : 루가 에알다(불/얼음), 크샬다오라\n\n" +
-                "• 융광종 : 기존 종족 몬스터의 변이 개체 (포획 불가 · 해당 종족 사냥/토벌 퀘스트와 동시 진행 가능!)";
-        }
-
         public static async Task<Tuple<QuestEntry, string>> ScanQuestDetailFromWindowAsync(IntPtr targetHwnd, int videoW, int videoH)
         {
             if (targetHwnd == IntPtr.Zero || IsIconic(targetHwnd))
@@ -1072,6 +1022,7 @@ namespace ScrcpyLauncher
             new QuestTitleTemplate { Title = "몬스터 이사 대작전", Region = "거목의 벌판", Species = "비룡종", ActionType = "포획", ObjectiveText = "거목의 벌판에서 비룡종 포획" },
             new QuestTitleTemplate { Title = "사막 비룡의 이동 경로 추적", Region = "열사 평원", Species = "비룡종", ActionType = "포획", ObjectiveText = "열사 평원에서 비룡종 포획" },
             new QuestTitleTemplate { Title = "신비로운 부패의 심연", Region = "부패의 심연", Species = "수룡종", ActionType = "포획", ObjectiveText = "부패의 심연에서 수룡종 포획" },
+            new QuestTitleTemplate { Title = "함정의 수수께끼", Region = "거목의 벌판", Species = "아룡종", ActionType = "포획", ObjectiveText = "거목의 벌판에서 아룡종 포획" },
 
             // Field — Hunt / Radiant
             new QuestTitleTemplate { Title = "심연 밑바닥의 강렬한 빛", Region = "부패의 심연", Species = "융광종", ActionType = "사냥", ObjectiveText = "부패의 심연에서 융광종 사냥" },
@@ -1082,6 +1033,9 @@ namespace ScrcpyLauncher
             new QuestTitleTemplate { Title = "또다시 빈손으로 귀환", Region = "열사 평원", Species = "어룡종", ActionType = "사냥", ObjectiveText = "열사 평원에서 어룡종 사냥" },
             new QuestTitleTemplate { Title = "무모한 사막의 거수", Region = "열사 평원", Species = "수룡종", ActionType = "사냥", ObjectiveText = "열사 평원에서 수룡종 사냥" },
             new QuestTitleTemplate { Title = "비룡의 날치기 배송", Region = "열사 평원", Species = "비룡종", ActionType = "사냥", ObjectiveText = "열사 평원에서 비룡종 사냥" },
+            new QuestTitleTemplate { Title = "다가오는 어둠", Region = "부패의 심연", Species = "아룡종", ActionType = "사냥", ObjectiveText = "부패의 심연에서 아룡종 사냥" },
+            new QuestTitleTemplate { Title = "섬에 사는 맹수의 방해", Region = "찬란한 군도", Species = "수룡종", ActionType = "사냥", ObjectiveText = "찬란한 군도에서 수룡종 사냥" },
+            new QuestTitleTemplate { Title = "빛나는 깃털", Region = "열사 평원", Species = "조룡종", ActionType = "사냥", ObjectiveText = "열사 평원에서 조룡종 사냥" },
 
             // Any-Field — Weapon Condition
             new QuestTitleTemplate { Title = "일정 대지연", Region = "필드 (지역 무관)", IsAnyField = true, Species = "비룡종", ActionType = "사냥", WeaponType = "원거리", ObjectiveText = "필드에서 원거리 무기를 사용해 비룡종 사냥" },
@@ -1109,7 +1063,10 @@ namespace ScrcpyLauncher
             new QuestTitleTemplate { Title = "안전한 글라이딩", Region = "둥지", IsNest = true, TargetMonster = "리오레우스", ActionType = "사냥", ObjectiveText = "둥지에서 리오레우스 사냥(난이도V)" },
             new QuestTitleTemplate { Title = "가출한 아내의 행방", Region = "둥지", IsNest = true, Species = "융광종", TargetMonster = "융광종 리오레이아", ActionType = "사냥", ObjectiveText = "둥지에서 융광종 리오레이아 사냥(난이도V)" },
             new QuestTitleTemplate { Title = "최고의 별미는 꼬리에 있다", Region = "둥지", IsNest = true, Species = "융광종", TargetMonster = "융광종 볼보로스", ActionType = "사냥", ObjectiveText = "둥지에서 융광종 볼보로스 사냥(난이도V)" },
-            new QuestTitleTemplate { Title = "설욕의 낚시", Region = "둥지", IsNest = true, TargetMonster = "쥬라토도스", ActionType = "포획", ObjectiveText = "둥지에서 쥬라토도스 포획(난이도V)" }
+            new QuestTitleTemplate { Title = "설욕의 낚시", Region = "둥지", IsNest = true, TargetMonster = "쥬라토도스", ActionType = "포획", ObjectiveText = "둥지에서 쥬라토도스 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "진흙은 최상급 팩", Region = "둥지", IsNest = true, TargetMonster = "볼보로스", ActionType = "포획", ObjectiveText = "둥지에서 볼보로스 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "영감은 갑작스럽게", Region = "둥지", IsNest = true, TargetMonster = "오도가론", ActionType = "포획", ObjectiveText = "둥지에서 오도가론 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "깊은 숲에 숨은 공포", Region = "둥지", IsNest = true, Species = "융광종", TargetMonster = "융광종 푸케푸케", ActionType = "사냥", ObjectiveText = "둥지에서 융광종 푸케푸케 사냥(난이도V)" }
         };
 
         private static List<QuestTitleTemplate> _learnedTitleCache = null;
@@ -1160,13 +1117,11 @@ namespace ScrcpyLauncher
             if (entry.Region == "기타/미분류")
                 return;
 
-            var all = GetAllTitleTemplates();
-            for (int i = 0; i < all.Count; i++)
-            {
-                if (NormalizeTitleKey(all[i].Title) == norm)
-                    return; // Already known
-            }
+            // Skip if already matched (including 1-2 char OCR typo of an existing built-in/learned title)
+            if (MatchTitleTemplate(entry.Title) != null)
+                return;
 
+            string cleanObj = (entry.ObjectiveText ?? "").Replace("등지에서", "둥지에서");
             var tpl = new QuestTitleTemplate
             {
                 Title = entry.Title.Trim(),
@@ -1177,7 +1132,7 @@ namespace ScrcpyLauncher
                 TargetMonster = entry.TargetMonster ?? "",
                 ActionType = entry.ActionType ?? "기타",
                 WeaponType = entry.WeaponType ?? "",
-                ObjectiveText = entry.ObjectiveText ?? ""
+                ObjectiveText = cleanObj
             };
             _learnedTitleCache.Add(tpl);
             try

@@ -804,7 +804,7 @@ namespace ScrcpyLauncher
                 <CheckBox x:Name='chkStayAwake' Content='절전 방지 (-w)'/>
                 <CheckBox x:Name='chkLowLatency' Content='저지연 인코딩'/>
                 <CheckBox x:Name='chkNoAudio' Content='소리 끄기'/>
-                <CheckBox x:Name='chkPrintFps' Content='화면 FPS 오버레이'/>
+                <CheckBox x:Name='chkPrintFps' Content='실시간 FPS 표시 (제목표시줄)'/>
               </WrapPanel>
             </StackPanel>
           </Border>

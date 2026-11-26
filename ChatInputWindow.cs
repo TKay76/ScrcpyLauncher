@@ -13,6 +13,16 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll")]
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+        private const uint SWP_NOSIZE = 0x0001;
+        private const uint SWP_NOACTIVATE = 0x0010;
+
         [StructLayout(LayoutKind.Sequential)]
         private struct RECT
         {
@@ -146,22 +156,36 @@ namespace ScrcpyLauncher
             _tb.Text = "";
             _hint.Visibility = Visibility.Visible;
 
+            bool hasTargetPx = false;
+            int targetPxX = 0, targetPxY = 0;
+
             try
             {
                 RECT rc;
                 if (targetHwnd != IntPtr.Zero && GetWindowRect(targetHwnd, out rc))
                 {
-                    var src = PresentationSource.FromVisual(this);
-                    double dpiX = (src != null && src.CompositionTarget != null) ? src.CompositionTarget.TransformToDevice.M11 : 1.0;
-                    double dpiY = (src != null && src.CompositionTarget != null) ? src.CompositionTarget.TransformToDevice.M22 : 1.0;
+                    double scale = 1.0;
+                    try
+                    {
+                        uint dpi = GetDpiForWindow(targetHwnd);
+                        if (dpi >= 72 && dpi <= 480) scale = dpi / 96.0;
+                    }
+                    catch { }
 
-                    double winLeft = rc.Left / dpiX;
-                    double winTop = rc.Top / dpiY;
-                    double winW = (rc.Right - rc.Left) / dpiX;
-                    double winH = (rc.Bottom - rc.Top) / dpiY;
+                    double winLeft = rc.Left / scale;
+                    double winTop = rc.Top / scale;
+                    double winW = (rc.Right - rc.Left) / scale;
+                    double winH = (rc.Bottom - rc.Top) / scale;
 
                     Left = winLeft + (winW - Width) / 2.0;
                     Top = winTop + winH - Height - 36.0;
+
+                    int barPxW = (int)Math.Round(Width * scale);
+                    int barPxH = (int)Math.Round(Height * scale);
+                    int marginPx = (int)Math.Round(36.0 * scale);
+                    targetPxX = rc.Left + ((rc.Right - rc.Left) - barPxW) / 2;
+                    targetPxY = rc.Bottom - barPxH - marginPx;
+                    hasTargetPx = true;
                 }
                 else
                 {
@@ -172,6 +196,16 @@ namespace ScrcpyLauncher
             catch { }
 
             Show();
+            if (hasTargetPx)
+            {
+                try
+                {
+                    IntPtr myHwnd = new WindowInteropHelper(this).Handle;
+                    if (myHwnd != IntPtr.Zero)
+                        SetWindowPos(myHwnd, HWND_TOPMOST, targetPxX, targetPxY, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+                catch { }
+            }
             Activate();
             _tb.Focus();
             Keyboard.Focus(_tb);

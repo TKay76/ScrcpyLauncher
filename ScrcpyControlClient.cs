@@ -22,6 +22,8 @@ namespace ScrcpyLauncher
         private BlockingCollection<byte[]> _sendQueue;
         private Thread _sendThread;
         private readonly object _sendLock = new object();
+        private static readonly Random _rng = new Random();
+        private static readonly object _rngLock = new object();
 
         private string _serial = "";
         private int _localPort = 27199;
@@ -49,7 +51,7 @@ namespace ScrcpyLauncher
 
         public async Task<Tuple<bool, string>> ConnectAsync(string serial, string scrcpyVersion, string displayId, int width, int height)
         {
-            Disconnect();
+            await DisconnectAsync();
             _serial = serial;
 
             if (!_adb.IsValid)
@@ -60,38 +62,49 @@ namespace ScrcpyLauncher
                 return Tuple.Create(false, "scrcpy-server 파일을 찾을 수 없습니다.");
 
             string ver = (scrcpyVersion ?? "").TrimStart('v', 'V');
-            if (string.IsNullOrEmpty(ver)) ver = "5.0.1";
+            if (string.IsNullOrEmpty(ver)) ver = "3.2";
 
             var pushRes = await _adb.RunAsync(_adb.AdbPath,
                 string.Format("-s \"{0}\" push \"{1}\" /data/local/tmp/scrcpy-server.jar", serial, serverJar), 8000);
             if (pushRes.ExitCode != 0)
                 return Tuple.Create(false, "scrcpy-server 전송 실패: " + pushRes.Combined.Trim());
 
-            // Use Android's software AVC encoder (c2.android.avc.encoder) at tiny 256px/1fps so the auxiliary
-            // keymap control server NEVER contends with the main scrcpy hardware video encoder (fixes slow-mo/catch-up!).
-            // Automatically falls back to default encoder if c2.android.avc.encoder is unavailable.
-            var firstTry = await ConnectServerOnceAsync(serial, ver, displayId, " video_encoder=c2.android.avc.encoder");
+            // Use Android's software AVC encoder (c2.android.avc.encoder) at 1fps + max_size=1920 so the auxiliary
+            // keymap control server NEVER contends with the main scrcpy hardware video encoder (fixes slow-mo/catch-up!),
+            // while staying within the 2048x2048 SW profile cap on QHD/tablets AND preserving full 1920-step aim precision!
+            int usedPort = 0;
+            var firstTry = await ConnectServerOnceAsync(serial, ver, displayId, " video_encoder=c2.android.avc.encoder", 0, p => usedPort = p);
             if (firstTry.Item1)
                 return firstTry;
 
-            return await ConnectServerOnceAsync(serial, ver, displayId, "");
+            await DisconnectAsync();
+            return await ConnectServerOnceAsync(serial, ver, displayId, "", usedPort, p => usedPort = p);
         }
 
-        private async Task<Tuple<bool, string>> ConnectServerOnceAsync(string serial, string ver, string displayId, string extraEncoderArg)
+        private async Task<Tuple<bool, string>> ConnectServerOnceAsync(string serial, string ver, string displayId, string extraEncoderArg, int avoidPort, Action<int> onPortPicked)
         {
-            var rng = new Random();
-            string scid = rng.Next(0x10000000, 0x7FFFFFFF).ToString("x8");
-            _localPort = rng.Next(27200, 27900);
+            string scid;
+            int port;
+            lock (_rngLock)
+            {
+                scid = _rng.Next(0x10000000, 0x7FFFFFFF).ToString("x8");
+                do
+                {
+                    port = _rng.Next(27200, 27900);
+                } while (port == avoidPort);
+            }
+            _localPort = port;
+            if (onPortPicked != null) onPortPicked(port);
 
             var fwdRes = await _adb.RunAsync(_adb.AdbPath,
                 string.Format("-s \"{0}\" forward tcp:{1} localabstract:scrcpy_{2}", serial, _localPort, scid), 5000);
             if (fwdRes.ExitCode != 0)
                 return Tuple.Create(false, "ADB 포트 포워딩 실패: " + fwdRes.Combined.Trim());
 
-            // video=true at 1fps is required so scrcpy-server initializes PositionMapper for INJECT_TOUCH_EVENT
+            // video=true at 1fps + max_size=1920 initializes PositionMapper with full 1920-pixel touch precision
             string dispArg = string.IsNullOrWhiteSpace(displayId) ? "" : (" display_id=" + displayId);
             string shellCmd = string.Format(
-                "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / com.genymobile.scrcpy.Server {0} scid={1} log_level=warn tunnel_forward=true video=true audio=false control=true clipboard_autosync=false cleanup=false max_fps=1 max_size=256 video_bit_rate=50000 send_device_meta=false send_dummy_byte=true{2}{3}",
+                "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / com.genymobile.scrcpy.Server {0} scid={1} log_level=warn tunnel_forward=true video=true audio=false control=true clipboard_autosync=false cleanup=false max_fps=1 max_size=1920 video_bit_rate=100000 send_device_meta=false send_dummy_byte=true{2}{3}",
                 ver, scid, dispArg, extraEncoderArg);
 
             var psi = new ProcessStartInfo
@@ -145,7 +158,8 @@ namespace ScrcpyLauncher
                         ctl.Connect("127.0.0.1", _localPort);
                         var cs = ctl.GetStream();
 
-                        byte[] meta = ReadExact(vs, 16);
+                        // Read 12-byte codec header ONLY (codec_id[4] + width[4] + height[4]) so static screens never block waiting for frame PTS!
+                        byte[] meta = ReadExact(vs, 12);
                         if (meta == null)
                         {
                             ctl.Close();
@@ -153,18 +167,8 @@ namespace ScrcpyLauncher
                             continue;
                         }
 
-                        int field1 = ReadInt32BE(meta, 4);
-                        int vw, vh;
-                        if (field1 == unchecked((int)0x80000000))
-                        {
-                            vw = ReadInt32BE(meta, 8);
-                            vh = ReadInt32BE(meta, 12);
-                        }
-                        else
-                        {
-                            vw = field1;
-                            vh = ReadInt32BE(meta, 8);
-                        }
+                        int vw = ReadInt32BE(meta, 4);
+                        int vh = ReadInt32BE(meta, 8);
 
                         if (vw > 0 && vw < 10000 && vh > 0 && vh < 10000)
                         {
@@ -204,11 +208,11 @@ namespace ScrcpyLauncher
                 return connectRes;
             if (!string.IsNullOrEmpty(connectRes.Item2))
             {
-                Disconnect();
+                await DisconnectAsync();
                 return connectRes;
             }
 
-            Disconnect();
+            await DisconnectAsync();
             string err = errBuf.ToString().Trim();
             return Tuple.Create(false, "제어 소켓 연결 시간 초과" + (string.IsNullOrEmpty(err) ? "" : ": " + err));
         }
@@ -365,7 +369,7 @@ namespace ScrcpyLauncher
             b[o + 7] = (byte)(v & 0xFF);
         }
 
-        public void Disconnect()
+        private Tuple<string, int> StopResourcesCore()
         {
             _running = false;
             var oldQueue = _sendQueue;
@@ -395,11 +399,33 @@ namespace ScrcpyLauncher
             catch { }
             _serverProc = null;
 
-            if (!string.IsNullOrEmpty(_serial) && _adb.IsValid)
+            string ser = _serial;
+            int port = _localPort;
+            _localPort = 0;
+            return Tuple.Create(ser, port);
+        }
+
+        public async Task DisconnectAsync()
+        {
+            var info = StopResourcesCore();
+            if (!string.IsNullOrEmpty(info.Item1) && info.Item2 > 0 && _adb.IsValid)
             {
                 try
                 {
-                    _adb.RunAsync(_adb.AdbPath, string.Format("-s \"{0}\" forward --remove tcp:{1}", _serial, _localPort), 2000);
+                    await _adb.RunAsync(_adb.AdbPath, string.Format("-s \"{0}\" forward --remove tcp:{1}", info.Item1, info.Item2), 2000);
+                }
+                catch { }
+            }
+        }
+
+        public void Disconnect()
+        {
+            var info = StopResourcesCore();
+            if (!string.IsNullOrEmpty(info.Item1) && info.Item2 > 0 && _adb.IsValid)
+            {
+                try
+                {
+                    _adb.RunAsync(_adb.AdbPath, string.Format("-s \"{0}\" forward --remove tcp:{1}", info.Item1, info.Item2), 2000);
                 }
                 catch { }
             }
