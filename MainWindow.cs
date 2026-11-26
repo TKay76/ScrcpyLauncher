@@ -126,6 +126,9 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern bool SetWindowText(IntPtr hWnd, string lpString);
+
         [DllImport("user32.dll")]
         private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
@@ -142,11 +145,14 @@ namespace ScrcpyLauncher
         private const int HOTKEY_QUEST_SCAN = 9001;
         private const int HOTKEY_SCREENSHOT = 9002;
         private const int HOTKEY_CHAT = 9003;
+        private const int HOTKEY_QUEST_BATCH = 9004;
         private const uint VK_F2 = 0x71;
+        private const uint VK_F7 = 0x76;
         private const uint VK_F8 = 0x77;
         private const uint VK_F12 = 0x7B;
         private const uint RIM_TYPEHID = 2;
         private bool _questHotKeyRegistered = false;
+        private bool _questBatchHotKeyRegistered = false;
         private bool _screenshotHotKeyRegistered = false;
         private bool _chatHotKeyRegistered = false;
         private ChatInputWindow _chatWindow;
@@ -229,6 +235,7 @@ namespace ScrcpyLauncher
 
         private TextBlock _txtGuideTitle;
         private TextBlock _txtGuideBody;
+        private readonly List<Tuple<FrameworkElement, string, string>> _guideBindings = new List<Tuple<FrameworkElement, string, string>>();
         private Button _btnCopyCmd;
 
         private Button _btnStart;
@@ -279,9 +286,9 @@ namespace ScrcpyLauncher
         private Button _btnKmDelKey;
 
         // Quest Planner Tab Controls
+        private Button _btnQuestBatchScan;
         private Button _btnQuestScanOne;
         private Button _btnQuestUndo;
-        private Button _btnQuestSpeciesGuide;
         private Button _btnQuestResetDaily;
         private Button _btnQuestClear;
         private TextBlock _txtQuestDaily;
@@ -289,19 +296,41 @@ namespace ScrcpyLauncher
         private TextBlock _txtQuestBanner;
         private StackPanel _pnlQuestPlans;
 
+        // HuntLink v2.0 Sidebar, Presets, Home Summary, Codex, Extra Args, Collapsible Log
+        private RadioButton _navHome, _navKeymap, _navQuest, _navCodex, _navAdvanced;
+        private FrameworkElement _pageHome, _pageKeymap, _pageQuest, _pageCodex, _pageAdvanced;
+        private Button _btnPreset1080, _btnPreset1440, _btnPresetNative, _btnPresetWifi;
+        private Border _bdHomeQuestCard, _bdLogDrawer;
+        private Button _btnGoQuestTab, _btnBottomOpenFolder, _btnToggleLog;
+        private TextBlock _txtHomeQuestMeta, _txtHomeQuestRec;
+        private TextBox _txtCodexSearch, _txtExtraArgs;
+        private TextBlock _txtCodexSearchHint, _txtExtraArgsHint;
+        private ComboBox _cmbCodexRegion, _cmbCodexSpecies;
+        private StackPanel _pnlCodexList;
+        private DockPanel _pnlConnStatus;
+        private Border _bdConnBadge, _bdBattBadge;
+        private TextBlock _txtConnBadge, _txtBattBadge, _txtConnDetail;
+        private int _connProbeSeq = 0;
+        private bool _isProbingBattery = false;
+        private DispatcherTimer _batteryTimer;
+        private string _liveFpsText = "";
+        private string _liveBattText = "";
+        private string _liveQuestRecShort = "";
+        private string _lastAppliedMirrorTitle = "";
+
         private const string ScrcpyReleasesUrl = "https://github.com/Genymobile/scrcpy/releases";
         private const string DefaultGuideTitle = "옵션 가이드";
         private const string DefaultGuideBody = "각 옵션 위에 마우스를 올리면 언제 켜고 끄면 좋은지 설명이 표시됩니다.";
 
         public MainWindow()
         {
-            Title = "Scrcpy Launcher v1.3.5 — Android 미러링";
-            Width = 780;
-            Height = 845;
-            MinWidth = 720;
-            MinHeight = 720;
+            Title = "HuntLink v2.0 — 몬헌 아웃랜더스 PC 런처";
+            Width = 940;
+            Height = 690;
+            MinWidth = 860;
+            MinHeight = 620;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EEF2F6"));
+            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F5F1E8"));
             FontFamily = new FontFamily("Malgun Gothic, Segoe UI");
 
             try
@@ -383,6 +412,8 @@ namespace ScrcpyLauncher
             _scannedQuests.Clear();
             _scannedQuests.AddRange(QuestOcrService.LoadActiveQuests());
             RefreshQuestPlannerUi();
+            RefreshMonsterCodexUi();
+            HighlightActiveVisualPreset();
 
             _isInitializing = false;
             UpdateUiStates();
@@ -391,748 +422,7 @@ namespace ScrcpyLauncher
 
         private UIElement BuildUi()
         {
-            string xaml = @"
-<Grid xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
-      xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
-      Margin='16,14,16,14'>
-  <Grid.Resources>
-    <Style TargetType='Border' x:Key='Card'>
-      <Setter Property='Background' Value='#FFFFFF'/>
-      <Setter Property='BorderBrush' Value='#E2E8F0'/>
-      <Setter Property='BorderThickness' Value='1'/>
-      <Setter Property='CornerRadius' Value='10'/>
-      <Setter Property='Padding' Value='14,12'/>
-      <Setter Property='Margin' Value='0,0,0,10'/>
-      <Setter Property='Effect'>
-        <Setter.Value>
-          <DropShadowEffect BlurRadius='10' ShadowDepth='2' Direction='270' Color='#0F172A' Opacity='0.05'/>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style TargetType='Border' x:Key='StepBadge'>
-      <Setter Property='Background' Value='#DBEAFE'/>
-      <Setter Property='CornerRadius' Value='10'/>
-      <Setter Property='Width' Value='20'/>
-      <Setter Property='Height' Value='20'/>
-      <Setter Property='Margin' Value='0,0,7,0'/>
-      <Setter Property='VerticalAlignment' Value='Center'/>
-    </Style>
-    <Style TargetType='TextBlock' x:Key='StepNum'>
-      <Setter Property='FontSize' Value='11'/>
-      <Setter Property='FontWeight' Value='Bold'/>
-      <Setter Property='Foreground' Value='#1D4ED8'/>
-      <Setter Property='HorizontalAlignment' Value='Center'/>
-      <Setter Property='VerticalAlignment' Value='Center'/>
-    </Style>
-    <Style TargetType='TextBlock' x:Key='SectionTitle'>
-      <Setter Property='FontSize' Value='13'/>
-      <Setter Property='FontWeight' Value='Bold'/>
-      <Setter Property='Foreground' Value='#0F172A'/>
-      <Setter Property='VerticalAlignment' Value='Center'/>
-    </Style>
-    <Style TargetType='TextBlock' x:Key='FieldLabel'>
-      <Setter Property='FontSize' Value='12'/>
-      <Setter Property='Foreground' Value='#475569'/>
-      <Setter Property='VerticalAlignment' Value='Center'/>
-      <Setter Property='Margin' Value='0,0,6,0'/>
-    </Style>
-    <Style TargetType='TextBox' x:Key='ModernTextBox'>
-      <Setter Property='Padding' Value='8,5'/>
-      <Setter Property='FontSize' Value='12'/>
-      <Setter Property='Height' Value='30'/>
-      <Setter Property='Background' Value='#FFFFFF'/>
-      <Setter Property='Foreground' Value='#0F172A'/>
-      <Setter Property='BorderBrush' Value='#CBD5E1'/>
-      <Setter Property='BorderThickness' Value='1'/>
-      <Setter Property='VerticalContentAlignment' Value='Center'/>
-      <Setter Property='Template'>
-        <Setter.Value>
-          <ControlTemplate TargetType='TextBox'>
-            <Border x:Name='bd' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='6'>
-              <ScrollViewer x:Name='PART_ContentHost' VerticalAlignment='Center' Margin='2,0'/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property='IsKeyboardFocused' Value='True'>
-                <Setter TargetName='bd' Property='BorderBrush' Value='#2563EB'/>
-              </Trigger>
-              <Trigger Property='IsEnabled' Value='False'>
-                <Setter TargetName='bd' Property='Opacity' Value='0.55'/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style TargetType='TextBox' BasedOn='{StaticResource ModernTextBox}'/>
-    <Style TargetType='ComboBox'>
-      <Setter Property='Padding' Value='8,4'/>
-      <Setter Property='Height' Value='30'/>
-      <Setter Property='FontSize' Value='12'/>
-      <Setter Property='VerticalContentAlignment' Value='Center'/>
-    </Style>
-    <Style TargetType='CheckBox'>
-      <Setter Property='FontSize' Value='12'/>
-      <Setter Property='Foreground' Value='#1E293B'/>
-      <Setter Property='VerticalContentAlignment' Value='Center'/>
-      <Setter Property='Margin' Value='0,4,10,4'/>
-      <Setter Property='Cursor' Value='Hand'/>
-    </Style>
-
-    <Style TargetType='Button' x:Key='RoundedBtnBase'>
-      <Setter Property='Padding' Value='12,6'/>
-      <Setter Property='Height' Value='30'/>
-      <Setter Property='FontSize' Value='12'/>
-      <Setter Property='Cursor' Value='Hand'/>
-      <Setter Property='Template'>
-        <Setter.Value>
-          <ControlTemplate TargetType='Button'>
-            <Border x:Name='bd' Background='{TemplateBinding Background}' BorderBrush='{TemplateBinding BorderBrush}' BorderThickness='{TemplateBinding BorderThickness}' CornerRadius='6' Padding='{TemplateBinding Padding}'>
-              <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property='IsMouseOver' Value='True'>
-                <Setter TargetName='bd' Property='Opacity' Value='0.88'/>
-              </Trigger>
-              <Trigger Property='IsPressed' Value='True'>
-                <Setter TargetName='bd' Property='Opacity' Value='0.75'/>
-              </Trigger>
-              <Trigger Property='IsEnabled' Value='False'>
-                <Setter TargetName='bd' Property='Opacity' Value='0.42'/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-
-    <Style TargetType='Button' x:Key='SubBtn' BasedOn='{StaticResource RoundedBtnBase}'>
-      <Setter Property='Background' Value='#F1F5F9'/>
-      <Setter Property='Foreground' Value='#1E293B'/>
-      <Setter Property='BorderBrush' Value='#CBD5E1'/>
-      <Setter Property='BorderThickness' Value='1'/>
-    </Style>
-    <Style TargetType='Button' x:Key='SoftBlueBtn' BasedOn='{StaticResource RoundedBtnBase}'>
-      <Setter Property='Background' Value='#EFF6FF'/>
-      <Setter Property='Foreground' Value='#1D4ED8'/>
-      <Setter Property='BorderBrush' Value='#93C5FD'/>
-      <Setter Property='BorderThickness' Value='1'/>
-    </Style>
-    <Style TargetType='Button' x:Key='SoftAmberBtn' BasedOn='{StaticResource RoundedBtnBase}'>
-      <Setter Property='Background' Value='#FFF7ED'/>
-      <Setter Property='Foreground' Value='#C2410C'/>
-      <Setter Property='BorderBrush' Value='#FDBA74'/>
-      <Setter Property='BorderThickness' Value='1'/>
-    </Style>
-    <Style TargetType='Button' x:Key='SoftRedBtn' BasedOn='{StaticResource RoundedBtnBase}'>
-      <Setter Property='Background' Value='#FEF2F2'/>
-      <Setter Property='Foreground' Value='#B91C1C'/>
-      <Setter Property='BorderBrush' Value='#FCA5A5'/>
-      <Setter Property='BorderThickness' Value='1'/>
-    </Style>
-    <Style TargetType='Button' x:Key='PrimaryBtn' BasedOn='{StaticResource RoundedBtnBase}'>
-      <Setter Property='Height' Value='36'/>
-      <Setter Property='Padding' Value='20,8'/>
-      <Setter Property='FontSize' Value='13'/>
-      <Setter Property='FontWeight' Value='Bold'/>
-      <Setter Property='Background' Value='#2563EB'/>
-      <Setter Property='Foreground' Value='#FFFFFF'/>
-      <Setter Property='BorderThickness' Value='0'/>
-    </Style>
-    <Style TargetType='Button' x:Key='DangerBtn' BasedOn='{StaticResource RoundedBtnBase}'>
-      <Setter Property='Height' Value='36'/>
-      <Setter Property='Padding' Value='16,8'/>
-      <Setter Property='FontSize' Value='13'/>
-      <Setter Property='FontWeight' Value='Bold'/>
-      <Setter Property='Background' Value='#DC2626'/>
-      <Setter Property='Foreground' Value='#FFFFFF'/>
-      <Setter Property='BorderThickness' Value='0'/>
-    </Style>
-    <Style TargetType='Button' x:Key='ActionSubBtn' BasedOn='{StaticResource SubBtn}'>
-      <Setter Property='Height' Value='36'/>
-      <Setter Property='Padding' Value='14,8'/>
-      <Setter Property='FontWeight' Value='SemiBold'/>
-    </Style>
-    <Style TargetType='Button' x:Key='DarkGhostBtn' BasedOn='{StaticResource RoundedBtnBase}'>
-      <Setter Property='Height' Value='24'/>
-      <Setter Property='Padding' Value='10,2'/>
-      <Setter Property='FontSize' Value='11'/>
-      <Setter Property='Background' Value='#1E293B'/>
-      <Setter Property='Foreground' Value='#CBD5E1'/>
-      <Setter Property='BorderBrush' Value='#334155'/>
-      <Setter Property='BorderThickness' Value='1'/>
-    </Style>
-    <Style TargetType='RadioButton' x:Key='ModeCard'>
-      <Setter Property='Cursor' Value='Hand'/>
-      <Setter Property='Template'>
-        <Setter.Value>
-          <ControlTemplate TargetType='RadioButton'>
-            <Border x:Name='card' Background='#FFFFFF' BorderBrush='#CBD5E1' BorderThickness='1.5' CornerRadius='9' Padding='12,8'>
-              <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property='IsChecked' Value='True'>
-                <Setter TargetName='card' Property='Background' Value='#EFF6FF'/>
-                <Setter TargetName='card' Property='BorderBrush' Value='#2563EB'/>
-              </Trigger>
-              <Trigger Property='IsMouseOver' Value='True'>
-                <Setter TargetName='card' Property='BorderBrush' Value='#60A5FA'/>
-              </Trigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style TargetType='TabItem' x:Key='PillTabItem'>
-      <Setter Property='Cursor' Value='Hand'/>
-      <Setter Property='Foreground' Value='#475569'/>
-      <Setter Property='FontSize' Value='12.5'/>
-      <Setter Property='FontWeight' Value='SemiBold'/>
-      <Setter Property='Template'>
-        <Setter.Value>
-          <ControlTemplate TargetType='TabItem'>
-            <Border x:Name='pill' Background='Transparent' CornerRadius='7' Padding='18,7' Margin='2'>
-              <ContentPresenter ContentSource='Header' HorizontalAlignment='Center' VerticalAlignment='Center'/>
-            </Border>
-            <ControlTemplate.Triggers>
-              <Trigger Property='IsSelected' Value='True'>
-                <Setter TargetName='pill' Property='Background' Value='#FFFFFF'/>
-                <Setter Property='Foreground' Value='#1D4ED8'/>
-                <Setter Property='FontWeight' Value='Bold'/>
-              </Trigger>
-              <MultiTrigger>
-                <MultiTrigger.Conditions>
-                  <Condition Property='IsMouseOver' Value='True'/>
-                  <Condition Property='IsSelected' Value='False'/>
-                </MultiTrigger.Conditions>
-                <Setter TargetName='pill' Property='Background' Value='#F1F5F9'/>
-              </MultiTrigger>
-            </ControlTemplate.Triggers>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-    <Style TargetType='TabControl' x:Key='PillTabControl'>
-      <Setter Property='Template'>
-        <Setter.Value>
-          <ControlTemplate TargetType='TabControl'>
-            <StackPanel>
-              <Border Background='#E2E8F0' CornerRadius='9' Padding='2' HorizontalAlignment='Left' Margin='0,0,0,8'>
-                <TabPanel IsItemsHost='True'/>
-              </Border>
-              <ContentPresenter ContentSource='SelectedContent'/>
-            </StackPanel>
-          </ControlTemplate>
-        </Setter.Value>
-      </Setter>
-    </Style>
-  </Grid.Resources>
-
-  <Grid.RowDefinitions>
-    <RowDefinition Height='Auto'/>
-    <RowDefinition Height='Auto'/>
-    <RowDefinition Height='Auto'/>
-    <RowDefinition Height='Auto'/>
-    <RowDefinition Height='Auto'/>
-    <RowDefinition Height='*'/>
-  </Grid.RowDefinitions>
-
-  <!-- Header -->
-  <Grid Grid.Row='0' Margin='2,0,2,10'>
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width='*'/>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='Auto'/>
-    </Grid.ColumnDefinitions>
-    <StackPanel Orientation='Horizontal' VerticalAlignment='Center'>
-      <TextBlock Text='Scrcpy Launcher' FontSize='18' FontWeight='Bold' Foreground='#0F172A'/>
-      <Border Background='#E0E7FF' CornerRadius='8' Padding='7,2' Margin='8,0,6,0' VerticalAlignment='Center'>
-        <TextBlock Text='v1.6.1' FontSize='11' FontWeight='Bold' Foreground='#3730A3'/>
-      </Border>
-      <Button x:Name='btnUpdate' Content='새 버전' Style='{StaticResource SoftBlueBtn}' Height='24' Padding='8,2' FontSize='11' FontWeight='Bold' Background='#DCFCE7' BorderBrush='#86EFAC' Foreground='#15803D' Margin='0,0,6,0' Visibility='Collapsed'/>
-    </StackPanel>
-    <Border x:Name='bdScrcpyStatus' Grid.Column='1' Background='#DCFCE7' CornerRadius='12' Padding='11,5' Margin='0,0,6,0' VerticalAlignment='Center'>
-      <TextBlock x:Name='txtScrcpyStatus' Text='scrcpy 확인 중...' FontSize='11' FontWeight='SemiBold' Foreground='#166534'/>
-    </Border>
-    <Button x:Name='btnDownloadScrcpy' Grid.Column='2' Content='scrcpy 다운로드' Style='{StaticResource SoftRedBtn}' Margin='0,0,5,0' Visibility='Collapsed'/>
-    <Button x:Name='btnSetupGuide' Grid.Column='3' Content='연결 · 문제해결 ?' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
-    <Button x:Name='btnShortcuts' Grid.Column='4' Content='단축키' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-    <Button x:Name='btnSelectFolder' Grid.Column='5' Content='폴더 변경' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-    <ComboBox x:Name='cmbLanguage' Grid.Column='6' Width='76' Height='30' FontSize='11.5'>
-      <ComboBoxItem Content='한국어' Tag='ko'/>
-      <ComboBoxItem Content='English' Tag='en'/>
-      <ComboBoxItem Content='日本語' Tag='ja'/>
-    </ComboBox>
-  </Grid>
-
-  <!-- Control Mode 3-Card Selector -->
-  <StackPanel Grid.Row='1' Margin='0,0,0,10'>
-    <UniformGrid Columns='3'>
-      <RadioButton x:Name='rbModeKeymap' GroupName='CtrlMode' Style='{StaticResource ModeCard}' Margin='0,0,6,0'>
-        <StackPanel>
-          <TextBlock x:Name='txtModeKmTitle' Text='키보드 + 마우스 (키 매핑)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
-          <TextBlock x:Name='txtModeKmSub' Text='WASD · 시점 회전 · 자동 연결' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
-        </StackPanel>
-      </RadioButton>
-      <RadioButton x:Name='rbModeGamepad' GroupName='CtrlMode' Style='{StaticResource ModeCard}' Margin='3,0,3,0'>
-        <StackPanel>
-          <TextBlock x:Name='txtModeGpTitle' Text='게임패드 (Xbox / PS)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
-          <TextBlock x:Name='txtModeGpSub' Text='UHID 컨트롤러 · 우클릭 충돌 방지' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
-        </StackPanel>
-      </RadioButton>
-      <RadioButton x:Name='rbModeNormal' GroupName='CtrlMode' Style='{StaticResource ModeCard}' Margin='6,0,0,0'>
-        <StackPanel>
-          <TextBlock x:Name='txtModeNmTitle' Text='일반 미러링 (기본)' FontSize='12.5' FontWeight='Bold' Foreground='#0F172A' HorizontalAlignment='Center'/>
-          <TextBlock x:Name='txtModeNmSub' Text='일반 터치 · 마우스 · 영상 시청' FontSize='10.5' Foreground='#64748B' HorizontalAlignment='Center' Margin='0,2,0,0'/>
-        </StackPanel>
-      </RadioButton>
-    </UniformGrid>
-    <TextBlock x:Name='txtModeSummary' Text='' FontSize='11' Foreground='#1D4ED8' FontWeight='SemiBold' Margin='4,5,0,0'/>
-  </StackPanel>
-
-  <!-- Main Segmented Tabs -->
-  <TabControl Grid.Row='2' Style='{StaticResource PillTabControl}' Margin='0,0,0,2'>
-    <TabItem x:Name='tabConn' Header='연결 및 영상' Style='{StaticResource PillTabItem}'>
-      <StackPanel>
-  <!-- 1. Device Connection -->
-  <Border Style='{StaticResource Card}'>
-    <StackPanel>
-      <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
-        <Border Style='{StaticResource StepBadge}'><TextBlock Text='1' Style='{StaticResource StepNum}'/></Border>
-        <TextBlock x:Name='txtSec1Title' Text='기기 연결 (USB 자동 감지 · 무선 전환 · ADB 관리)' Style='{StaticResource SectionTitle}'/>
-      </StackPanel>
-      <Grid Margin='0,0,0,6'>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width='*'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='Auto'/>
-        </Grid.ColumnDefinitions>
-        <ComboBox x:Name='cmbDevices' Grid.Column='0' Margin='0,0,6,0'/>
-        <Button x:Name='btnRefreshDevices' Grid.Column='1' Content='새로고침' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-        <Button x:Name='btnUsbToWifi' Grid.Column='2' Content='유선 → 무선' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
-        <Button x:Name='btnDisconnectWifi' Grid.Column='3' Content='무선 해제' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-        <Button x:Name='btnRestartAdb' Grid.Column='4' Content='ADB 재시작' Style='{StaticResource SoftAmberBtn}'/>
-      </Grid>
-
-      <Expander x:Name='expWireless' Header='수동 무선 디버깅 페어링 / IP 직접 연결 (케이블 없이 연결할 때)' FontSize='12' Foreground='#475569' Margin='0,2,0,0'>
-        <Border Background='#F8FAFC' BorderBrush='#E2E8F0' BorderThickness='1' CornerRadius='8' Padding='10,8' Margin='0,6,0,0'>
-          <StackPanel>
-            <Grid Margin='0,0,0,6'>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width='125'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='95'/>
-                <ColumnDefinition Width='Auto'/>
-              </Grid.ColumnDefinitions>
-              <TextBlock x:Name='lblPairAddr' Grid.Column='0' Text='① 페어링 IP:포트' Style='{StaticResource FieldLabel}'/>
-              <TextBox x:Name='txtPairAddr' Grid.Column='1' Margin='0,0,10,0'/>
-              <TextBlock x:Name='lblPairCode' Grid.Column='2' Text='6자리 코드' Style='{StaticResource FieldLabel}'/>
-              <TextBox x:Name='txtPairCode' Grid.Column='3' Margin='0,0,8,0'/>
-              <Button x:Name='btnPair' Grid.Column='4' Content='페어링' Style='{StaticResource SubBtn}' Width='78'/>
-            </Grid>
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width='125'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='Auto'/>
-              </Grid.ColumnDefinitions>
-              <TextBlock x:Name='lblWifiAddr' Grid.Column='0' Text='② 무선 디버깅 IP:포트' Style='{StaticResource FieldLabel}'/>
-              <TextBox x:Name='txtWifiAddr' Grid.Column='1' Margin='0,0,8,0'/>
-              <Button x:Name='btnWifiConnect' Grid.Column='2' Content='무선 연결' Style='{StaticResource SoftBlueBtn}' Width='78'/>
-            </Grid>
-          </StackPanel>
-        </Border>
-      </Expander>
-    </StackPanel>
-  </Border>
-
-  <!-- 2. Video, Performance & Recording -->
-  <Border Style='{StaticResource Card}'>
-    <StackPanel>
-      <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
-        <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
-        <TextBlock x:Name='txtSec2Title' Text='영상 · 성능 · 저장 설정' Style='{StaticResource SectionTitle}'/>
-      </StackPanel>
-      <Grid Margin='0,0,0,8'>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='125'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='58'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='108'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='88'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='*'/>
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name='lblCodec' Grid.Column='0' Text='코덱' Style='{StaticResource FieldLabel}'/>
-        <ComboBox x:Name='cmbCodec' Grid.Column='1' Margin='0,0,10,0'>
-          <ComboBoxItem Content='h264 (저지연)' Tag='h264'/>
-          <ComboBoxItem Content='h265 (고화질)' Tag='h265'/>
-          <ComboBoxItem Content='av1' Tag='av1'/>
-        </ComboBox>
-
-        <TextBlock Grid.Column='2' Text='Mbps' Style='{StaticResource FieldLabel}'/>
-        <TextBox x:Name='txtBitrate' Grid.Column='3' Margin='0,0,10,0' Text='20'/>
-
-        <TextBlock x:Name='lblMaxSize' Grid.Column='4' Text='최대크기' Style='{StaticResource FieldLabel}'/>
-        <ComboBox x:Name='cmbMaxSize' Grid.Column='5' Margin='0,0,10,0' IsEditable='True'>
-          <ComboBoxItem Content='0 (제한없음)' Tag='0'/>
-          <ComboBoxItem Content='1920' Tag='1920'/>
-          <ComboBoxItem Content='1600' Tag='1600'/>
-          <ComboBoxItem Content='1280' Tag='1280'/>
-        </ComboBox>
-
-        <TextBlock Grid.Column='6' Text='FPS' Style='{StaticResource FieldLabel}'/>
-        <ComboBox x:Name='cmbMaxFps' Grid.Column='7' Margin='0,0,10,0' IsEditable='True'>
-          <ComboBoxItem Content='0 (자동)' Tag='0'/>
-          <ComboBoxItem Content='60' Tag='60'/>
-          <ComboBoxItem Content='120' Tag='120'/>
-        </ComboBox>
-
-        <TextBlock x:Name='lblRenderer' Grid.Column='8' Text='렌더러' Style='{StaticResource FieldLabel}'/>
-        <ComboBox x:Name='cmbRenderer' Grid.Column='9'>
-          <ComboBoxItem Content='자동 (D3D11)' Tag='auto'/>
-          <ComboBoxItem Content='OpenGL' Tag='opengl'/>
-        </ComboBox>
-      </Grid>
-
-      <WrapPanel Margin='2,2,0,8'>
-        <CheckBox x:Name='chkTurnScreenOff' Content='폰 화면 끄기 (-S)'/>
-        <CheckBox x:Name='chkStayAwake' Content='절전 방지 (-w)'/>
-        <CheckBox x:Name='chkLowLatency' Content='저지연 인코딩'/>
-        <CheckBox x:Name='chkNoAudio' Content='소리 끄기'/>
-        <CheckBox x:Name='chkAudioSafe' Content='오디오 안정화'/>
-        <CheckBox x:Name='chkFullscreen' Content='전체화면 시작 (-f)'/>
-        <CheckBox x:Name='chkAlwaysOnTop' Content='항상 위에 (실시간)'/>
-        <CheckBox x:Name='chkRememberWin' Content='창 위치·크기 기억'/>
-        <CheckBox x:Name='chkPrintFps' Content='화면 FPS 오버레이'/>
-      </WrapPanel>
-
-      <Border Height='1' Background='#F1F5F9' Margin='0,0,0,8'/>
-
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='*'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='Auto'/>
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name='lblRecFolder' Grid.Column='0' Text='캡처 · 녹화 저장 폴더' Style='{StaticResource FieldLabel}'/>
-        <TextBox x:Name='txtRecordFolder' Grid.Column='1' IsReadOnly='True' Background='#F8FAFC' Foreground='#475569' Margin='0,0,6,0'/>
-        <Button x:Name='btnBrowseRecord' Grid.Column='2' Content='폴더 선택' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-        <Button x:Name='btnOpenRecord' Grid.Column='3' Content='폴더 열기' Style='{StaticResource SubBtn}'/>
-      </Grid>
-    </StackPanel>
-  </Border>
-
-  <!-- 3. Virtual Display & App Launch -->
-  <Border Style='{StaticResource Card}'>
-    <StackPanel>
-      <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
-        <Border Style='{StaticResource StepBadge}'><TextBlock Text='3' Style='{StaticResource StepNum}'/></Border>
-        <TextBlock x:Name='txtSec3Title' Text='가상 디스플레이 · 앱 바로 실행 (16:9 / 21:9 최적화)' Style='{StaticResource SectionTitle}'/>
-      </StackPanel>
-      <Grid Margin='0,0,0,8'>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='175'/>
-          <ColumnDefinition Width='*'/>
-        </Grid.ColumnDefinitions>
-        <CheckBox x:Name='chkVirtualDisplay' Grid.Column='0' Content='가상 디스플레이 사용' VerticalAlignment='Center' Margin='0,0,10,0'/>
-        <ComboBox x:Name='cmbVdSpec' Grid.Column='1' IsEditable='True' Margin='0,0,16,0'>
-          <ComboBoxItem Content='1920x1080/280'/>
-          <ComboBoxItem Content='2560x1440/373'/>
-          <ComboBoxItem Content='2560x1080/280'/>
-          <ComboBoxItem Content='3440x1440/373'/>
-        </ComboBox>
-        <CheckBox x:Name='chkNoVdDecorations' Grid.Column='2' Content='DeX / 시스템 UI 건너뛰기 (앱 단독 실행)' VerticalAlignment='Center' Margin='0'/>
-      </Grid>
-
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='165'/>
-          <ColumnDefinition Width='*'/>
-          <ColumnDefinition Width='Auto'/>
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name='lblApp' Grid.Column='0' Text='실행 앱' Style='{StaticResource FieldLabel}'/>
-        <Grid Grid.Column='1' Margin='0,0,6,0'>
-          <TextBox x:Name='txtAppSearch'/>
-          <TextBlock x:Name='txtAppSearchHint' Text='앱 이름 · 패키지 검색...' FontSize='11.5' Foreground='#94A3B8' IsHitTestVisible='False' VerticalAlignment='Center' Margin='9,0,0,0'/>
-        </Grid>
-        <ComboBox x:Name='cmbApps' Grid.Column='2' Margin='0,0,6,0'/>
-        <Button x:Name='btnRefreshApps' Grid.Column='3' Content='앱 불러오기' Style='{StaticResource SubBtn}'/>
-      </Grid>
-    </StackPanel>
-  </Border>
-      </StackPanel>
-    </TabItem>
-
-    <TabItem x:Name='tabKeymap' Header='키 매핑' Style='{StaticResource PillTabItem}'>
-      <StackPanel>
-        <!-- Mode Warning Banner (shown when Gamepad or Normal mode is active) -->
-        <Border x:Name='bdKmModeWarning' Background='#FFFBEB' BorderBrush='#FCD34D' BorderThickness='1' CornerRadius='8' Padding='11,7' Margin='0,0,0,8' Visibility='Collapsed'>
-          <StackPanel>
-            <TextBlock x:Name='txtKmModeWarning' Text='현재 키보드+마우스 모드가 아닙니다. 키 매핑 기능은 상단에서 [키보드 + 마우스] 모드를 선택했을 때 작동합니다. (게임패드 버튼 리매핑은 미지원)' FontSize='11.5' Foreground='#92400E' TextWrapping='Wrap'/>
-            <CheckBox x:Name='chkGamepadKbAssist' Content='게임패드 모드에서도 키보드 보조 매핑 사용 (모험단 춤 방향키 등 · 마우스 시점 제외)' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E3A8A' Margin='0,5,0,0'/>
-          </StackPanel>
-        </Border>
-
-        <!-- Profile Card -->
-        <Border Style='{StaticResource Card}'>
-          <StackPanel>
-            <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
-              <Border Style='{StaticResource StepBadge}'><TextBlock Text='1' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock x:Name='txtKmSec1' Text='키 매핑 프로파일 (무기별 관리 · LD플레이어 .kmp 호환)' Style='{StaticResource SectionTitle}'/>
-            </StackPanel>
-            <Grid Margin='0,0,0,6'>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-              </Grid.ColumnDefinitions>
-              <ComboBox x:Name='cmbKeyProfiles' Grid.Column='0' Margin='0,0,6,0'/>
-              <Button x:Name='btnReloadProfiles' Grid.Column='1' Content='새로고침' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-              <Button x:Name='btnImportKmp' Grid.Column='2' Content='LD .kmp 불러오기' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
-              <Button x:Name='btnSaveProfile' Grid.Column='3' Content='저장' Style='{StaticResource SubBtn}'/>
-            </Grid>
-            <StackPanel Orientation='Horizontal'>
-              <Button x:Name='btnSaveAsProfile' Content='다른 이름으로 저장' Style='{StaticResource SubBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
-              <Button x:Name='btnRenameProfile' Content='이름 변경' Style='{StaticResource SubBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
-              <Button x:Name='btnDeleteProfile' Content='프로파일 삭제' Style='{StaticResource SoftRedBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,10,0'/>
-              <Button x:Name='btnExportCode' Content='코드 복사' Style='{StaticResource SoftBlueBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,5,0'/>
-              <Button x:Name='btnImportCode' Content='코드 불러오기' Style='{StaticResource SoftBlueBtn}' Height='26' Padding='10,3' FontSize='11.5' Margin='0,0,8,0'/>
-              <TextBlock x:Name='lblHotkeyHint' Text='게임 중 Ctrl+F1~F9 전환' FontSize='11' Foreground='#64748B' VerticalAlignment='Center'/>
-            </StackPanel>
-          </StackPanel>
-        </Border>
-
-        <!-- Control & Camera Card -->
-        <Border Style='{StaticResource Card}'>
-          <StackPanel>
-            <StackPanel Orientation='Horizontal' Margin='0,0,0,9'>
-              <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock x:Name='txtKmSec2' Text='멀티터치 조작 · 시점 회전 설정' Style='{StaticResource SectionTitle}'/>
-            </StackPanel>
-            <WrapPanel Margin='2,0,0,8'>
-              <CheckBox x:Name='chkKmJoy' Content='WASD + Shift 질주'/>
-              <CheckBox x:Name='chkKmCam' Content='마우스 시점 회전'/>
-              <CheckBox x:Name='chkKmLeft' Content='좌클릭 공격'/>
-              <CheckBox x:Name='chkKmRight' Content='우클릭 보조'/>
-              <CheckBox x:Name='chkKmRightWheel' Content='우클릭 휠드래그'/>
-              <CheckBox x:Name='chkKmHints' Content='화면 키 힌트' IsChecked='True'/>
-            </WrapPanel>
-            <Grid Margin='0,0,0,10'>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='95'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='36'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='36'/>
-              </Grid.ColumnDefinitions>
-              <TextBlock x:Name='lblCamToggle' Grid.Column='0' Text='시점 토글' Style='{StaticResource FieldLabel}'/>
-              <ComboBox x:Name='cmbKmToggleKey' Grid.Column='1' Margin='0,0,12,0'>
-                <ComboBoxItem Content='Alt' Tag='18'/>
-                <ComboBoxItem Content='` (~)' Tag='192'/>
-                <ComboBoxItem Content='Tab' Tag='9'/>
-              </ComboBox>
-              <TextBlock x:Name='lblSensX' Grid.Column='2' Text='감도 X' Style='{StaticResource FieldLabel}'/>
-              <Slider x:Name='sldKmSensX' Grid.Column='3' Minimum='0.1' Maximum='3.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
-              <TextBlock x:Name='txtKmSensXVal' Grid.Column='4' Text='1.00' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center' Margin='0,0,10,0'/>
-              <TextBlock x:Name='lblSensY' Grid.Column='5' Text='감도 Y' Style='{StaticResource FieldLabel}'/>
-              <Slider x:Name='sldKmSensY' Grid.Column='6' Minimum='0.1' Maximum='3.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
-              <TextBlock x:Name='txtKmSensYVal' Grid.Column='7' Text='1.00' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center'/>
-            </Grid>
-            <Grid Margin='0,0,0,10'>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='40'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='40'/>
-              </Grid.ColumnDefinitions>
-              <TextBlock x:Name='lblHintOp' Grid.Column='0' Text='힌트 투명도' Style='{StaticResource FieldLabel}'/>
-              <Slider x:Name='sldHintOpacity' Grid.Column='1' Minimum='0.25' Maximum='1.0' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
-              <TextBlock x:Name='txtHintOpacityVal' Grid.Column='2' Text='100%' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center' Margin='0,0,12,0'/>
-              <TextBlock x:Name='lblHintSc' Grid.Column='3' Text='힌트 크기' Style='{StaticResource FieldLabel}'/>
-              <Slider x:Name='sldHintScale' Grid.Column='4' Minimum='0.7' Maximum='1.5' Value='1.0' TickFrequency='0.05' IsSnapToTickEnabled='True' VerticalAlignment='Center' Margin='0,0,4,0'/>
-              <TextBlock x:Name='txtHintScaleVal' Grid.Column='5' Text='100%' FontSize='11.5' FontWeight='SemiBold' Foreground='#1E293B' VerticalAlignment='Center'/>
-            </Grid>
-            <StackPanel Orientation='Horizontal'>
-              <Button x:Name='btnKmEditOverlay' Content='화면에서 키 배치' Style='{StaticResource SoftBlueBtn}' Height='32' Padding='16,6' Margin='0,0,8,0'/>
-              <Button x:Name='btnKmStart' Content='수동 재연결' Style='{StaticResource SubBtn}' Height='32' Padding='12,6' Margin='0,0,6,0'/>
-              <Button x:Name='btnKmStop' Content='매핑 일시중지' Style='{StaticResource SoftRedBtn}' Height='32' Padding='12,6' IsEnabled='False'/>
-            </StackPanel>
-          </StackPanel>
-        </Border>
-
-        <!-- Mapped Keys List Card -->
-        <Border Style='{StaticResource Card}'>
-          <StackPanel>
-            <StackPanel Orientation='Horizontal' Margin='0,0,0,8'>
-              <Border Style='{StaticResource StepBadge}'><TextBlock Text='3' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock x:Name='txtKmSec3' Text='매핑된 액션 키 목록 (누름/홀드 멀티터치 지원)' Style='{StaticResource SectionTitle}'/>
-            </StackPanel>
-            <ListBox x:Name='lstKmKeys' Height='115' BorderBrush='#CBD5E1' BorderThickness='1' FontSize='12' Margin='0,0,0,8'/>
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width='115'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-              </Grid.ColumnDefinitions>
-              <TextBox x:Name='txtKmNewKey' Grid.Column='0' IsReadOnly='True' Text='클릭 후 키 누름' Foreground='#64748B' Margin='0,0,6,0'/>
-              <TextBox x:Name='txtKmNewLabel' Grid.Column='1' Margin='0,0,8,0'/>
-              <CheckBox x:Name='chkKmNewWheel' Grid.Column='2' Content='휠 드래그' VerticalAlignment='Center' Margin='0,0,8,0'/>
-              <Button x:Name='btnKmAddKey' Grid.Column='3' Content='+ 키 추가' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-              <Button x:Name='btnKmDelKey' Grid.Column='4' Content='선택 삭제' Style='{StaticResource SoftRedBtn}'/>
-            </Grid>
-          </StackPanel>
-        </Border>
-      </StackPanel>
-    </TabItem>
-
-    <TabItem x:Name='tabQuest' Header='퀘스트 플래너' Style='{StaticResource PillTabItem}'>
-      <StackPanel>
-        <!-- Quest Scan Controls & Top Recommendation -->
-        <Border Style='{StaticResource Card}'>
-          <StackPanel>
-            <StackPanel Orientation='Horizontal' Margin='0,0,0,8'>
-              <Border Style='{StaticResource StepBadge}'><TextBlock Text='1' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock Text='퀘스트 수집 (게임에서 퀘스트 클릭 후 [F8] 눌러 추가 · 둥지 먼저 비우기 → 필드 중복 클리어)' Style='{StaticResource SectionTitle}'/>
-            </StackPanel>
-            <Grid Margin='0,0,0,8'>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='*'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-                <ColumnDefinition Width='Auto'/>
-              </Grid.ColumnDefinitions>
-              <Button x:Name='btnQuestScanOne' Grid.Column='0' Content='+ 수집 (F8)' Style='{StaticResource SoftBlueBtn}' Margin='0,0,5,0'/>
-              <Button x:Name='btnQuestUndo' Grid.Column='1' Content='↩ 취소' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-              <Button x:Name='btnQuestSpeciesGuide' Grid.Column='2' Content='종족 도감 ?' Style='{StaticResource SubBtn}' Margin='0,0,5,0'/>
-              <Border Grid.Column='4' Background='#ECFDF5' BorderBrush='#A7F3D0' BorderThickness='1' CornerRadius='6' Padding='8,4' Margin='0,0,4,0' VerticalAlignment='Center' ToolTip='매일 한국시간 오전 5시에 자동 초기화됩니다.'>
-                <TextBlock x:Name='txtQuestDaily' Text='오늘 완료: 0건' FontSize='11.5' FontWeight='Bold' Foreground='#047857'/>
-              </Border>
-              <Button x:Name='btnQuestResetDaily' Grid.Column='5' Content='리셋' Style='{StaticResource SubBtn}' Padding='7,4' Margin='0,0,6,0' ToolTip='오늘 완료 카운터를 0으로 초기화합니다.'/>
-              <Border Grid.Column='6' Background='#EFF6FF' BorderBrush='#BFDBFE' BorderThickness='1' CornerRadius='6' Padding='8,4' Margin='0,0,5,0' VerticalAlignment='Center'>
-                <TextBlock x:Name='txtQuestCount' Text='보유: 0 / 10' FontSize='11.5' FontWeight='Bold' Foreground='#1D4ED8'/>
-              </Border>
-              <Button x:Name='btnQuestClear' Grid.Column='7' Content='비우기' Style='{StaticResource SoftRedBtn}' Padding='9,4'/>
-            </Grid>
-            <Border Background='#F0FDF4' BorderBrush='#86EFAC' BorderThickness='1' CornerRadius='7' Padding='10,6'>
-              <TextBlock x:Name='txtQuestBanner' Text='게임에서 퀘스트를 클릭한 뒤 [F8]을 눌러 수집하세요. (최대 10개)' FontSize='12' FontWeight='SemiBold' Foreground='#166534' TextWrapping='Wrap'/>
-            </Border>
-          </StackPanel>
-        </Border>
-
-        <!-- Simultaneous Clear Plans (with 1-click group & individual clear buttons) -->
-        <Border Style='{StaticResource Card}'>
-          <StackPanel>
-            <StackPanel Orientation='Horizontal' Margin='0,0,0,8'>
-              <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock Text='동시 클리어 추천 조합 (클리어한 조합이나 개별 항목의 [✓]를 눌러 비우고 새 퀘스트만 추가하세요)' Style='{StaticResource SectionTitle}'/>
-            </StackPanel>
-            <ScrollViewer Height='325' VerticalScrollBarVisibility='Auto'>
-              <StackPanel x:Name='pnlQuestPlans'>
-                <TextBlock Text='아직 수집된 퀘스트가 없습니다. 게임에서 퀘스트를 선택한 뒤 [F8]을 눌러 수집하세요.' FontSize='12' Foreground='#64748B' TextWrapping='Wrap' Margin='4,12'/>
-              </StackPanel>
-            </ScrollViewer>
-          </StackPanel>
-        </Border>
-      </StackPanel>
-    </TabItem>
-  </TabControl>
-
-  <!-- Dynamic Option Guide -->
-  <Border Grid.Row='3' Background='#EFF6FF' BorderBrush='#BFDBFE' BorderThickness='1' CornerRadius='8' Padding='12,7' Margin='0,0,0,9'>
-    <DockPanel>
-      <Border Background='#2563EB' CornerRadius='4' Padding='6,2' Margin='0,0,9,0' VerticalAlignment='Center' DockPanel.Dock='Left'>
-        <TextBlock x:Name='txtGuideTitle' Text='옵션 가이드' FontSize='11' FontWeight='Bold' Foreground='#FFFFFF'/>
-      </Border>
-      <TextBlock x:Name='txtGuideBody' Text='각 옵션 위에 마우스를 올리면 언제 켜고 끄면 좋은지 설명이 표시됩니다.' FontSize='12' Foreground='#1E3A8A' VerticalAlignment='Center' TextWrapping='Wrap'/>
-    </DockPanel>
-  </Border>
-
-  <!-- Action Buttons -->
-  <Grid Grid.Row='4' Margin='0,0,0,9'>
-    <Grid.ColumnDefinitions>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='*'/>
-      <ColumnDefinition Width='Auto'/>
-      <ColumnDefinition Width='Auto'/>
-    </Grid.ColumnDefinitions>
-    <Button x:Name='btnStart' Grid.Column='0' Content='▶  키마 미러링 시작' Style='{StaticResource PrimaryBtn}' Margin='0,0,6,0'/>
-    <Button x:Name='btnStop' Grid.Column='1' Content='■  중지' Style='{StaticResource DangerBtn}' IsEnabled='False'/>
-    <Button x:Name='btnScreenshot' Grid.Column='3' Content='화면 캡처' Style='{StaticResource ActionSubBtn}' Margin='0,0,6,0'/>
-    <Button x:Name='btnRecordToggle' Grid.Column='4' Content='● 녹화 시작' Style='{StaticResource ActionSubBtn}'/>
-  </Grid>
-
-  <!-- Live Console Log -->
-  <Border Grid.Row='5' Background='#0F172A' CornerRadius='10' Padding='10,8,10,10'>
-    <Grid>
-      <Grid.RowDefinitions>
-        <RowDefinition Height='Auto'/>
-        <RowDefinition Height='*'/>
-      </Grid.RowDefinitions>
-      <Grid Grid.Row='0' Margin='2,0,2,6'>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width='*'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='Auto'/>
-          <ColumnDefinition Width='Auto'/>
-        </Grid.ColumnDefinitions>
-        <TextBlock x:Name='lblLog' Grid.Column='0' Text='실시간 로그' FontSize='11.5' FontWeight='SemiBold' Foreground='#94A3B8' VerticalAlignment='Center'/>
-        <Border x:Name='bdFpsBadge' Grid.Column='1' Background='#1E293B' BorderBrush='#334155' BorderThickness='1' CornerRadius='10' Padding='9,2' Margin='0,0,6,0' VerticalAlignment='Center' Visibility='Collapsed'>
-          <TextBlock x:Name='txtFpsBadge' Text='FPS: --' FontSize='11' FontWeight='Bold' Foreground='#4ADE80'/>
-        </Border>
-        <Button x:Name='btnCopyCmd' Grid.Column='2' Content='명령어 복사' Style='{StaticResource DarkGhostBtn}' Margin='0,0,5,0'/>
-        <Button x:Name='btnClearLog' Grid.Column='3' Content='지우기' Style='{StaticResource DarkGhostBtn}'/>
-      </Grid>
-      <TextBox x:Name='txtLog'
-               Grid.Row='1'
-               IsReadOnly='True'
-               Background='Transparent'
-               Foreground='#E2E8F0'
-               BorderThickness='0'
-               Height='Auto'
-               Padding='0'
-               FontFamily='Consolas, Malgun Gothic'
-               FontSize='11.5'
-               TextWrapping='Wrap'
-               VerticalContentAlignment='Top'
-               VerticalScrollBarVisibility='Auto'
-               AcceptsReturn='True'>
-        <TextBox.Template>
-          <ControlTemplate TargetType='TextBox'>
-            <ScrollViewer x:Name='PART_ContentHost'/>
-          </ControlTemplate>
-        </TextBox.Template>
-      </TextBox>
-    </Grid>
-  </Border>
-</Grid>";
-
-            return (UIElement)XamlReader.Parse(xaml);
+            return HuntLinkUiBuilder.Build();
         }
 
         private void BindControls()
@@ -1243,9 +533,9 @@ namespace ScrcpyLauncher
             _btnKmDelKey = (Button)root.FindName("btnKmDelKey");
 
             // Quest Planner controls
+            _btnQuestBatchScan = (Button)root.FindName("btnQuestBatchScan");
             _btnQuestScanOne = (Button)root.FindName("btnQuestScanOne");
             _btnQuestUndo = (Button)root.FindName("btnQuestUndo");
-            _btnQuestSpeciesGuide = (Button)root.FindName("btnQuestSpeciesGuide");
             _btnQuestResetDaily = (Button)root.FindName("btnQuestResetDaily");
             _btnQuestClear = (Button)root.FindName("btnQuestClear");
             _txtQuestDaily = (TextBlock)root.FindName("txtQuestDaily");
@@ -1253,38 +543,88 @@ namespace ScrcpyLauncher
             _txtQuestBanner = (TextBlock)root.FindName("txtQuestBanner");
             _pnlQuestPlans = (StackPanel)root.FindName("pnlQuestPlans");
 
-            // Interactive guides + tooltips (generic phrasing for public distribution)
-            AttachGuide(_btnDownloadScrcpy, "scrcpy 공식 다운로드", "공식 GitHub Releases 페이지에서 최신 Windows용 scrcpy zip 파일을 받아 압축을 푼 뒤, 이 실행 파일을 같은 폴더에 넣어주세요.");
-            AttachGuide(_btnSetupGuide, "스마트폰 최초 연결 방법", "개발자 옵션 활성화, USB 디버깅 켜기, 무선 디버깅 연결 방법을 처음 사용하는 분도 따라할 수 있게 단계별로 안내합니다.");
-            AttachGuide(_btnShortcuts, "실행 중 단축키 안내", "전체화면 전환(Alt+F), 폰 화면 끄기/켜기(Alt+O / Alt+Shift+O), FPS 표시(Alt+I) 등 유용한 단축키를 확인합니다.");
-            AttachGuide(_btnUsbToWifi, "유선 → 무선 전환", "USB로 연결된 상태에서 클릭하면 폰의 Wi-Fi IP를 자동 조회해 무선 연결로 바꿔줍니다. 완료 후 케이블을 뽑고 충전기를 연결할 수 있습니다.");
-            AttachGuide(_btnDisconnectWifi, "무선 연결 해제", "현재 연결된 무선(Wi-Fi) ADB 기기 연결을 끊습니다. (선택된 무선 기기 또는 전체 무선 연결 해제)");
-            AttachGuide(_btnRestartAdb, "ADB 서버 재시작", "기기가 offline 또는 unauthorized 상태로 멈추거나 인식이 꼬였을 때 ADB 서버를 깔끔하게 재시작합니다.");
-            AttachGuide(_cmbCodec, "비디오 코덱", "H.264: USB 유선·실시간 게임에 가장 빠르고 지연이 적음. / H.265: Wi-Fi 무선이나 낮은 비트레이트에서 화질이 더 선명함.");
-            AttachGuide(_txtBitrate, "비트레이트 (Mbps)", "영상 전송 대역폭입니다. 1080p 유선은 15~25Mbps, 무선은 8~16Mbps가 적당합니다. 너무 높이면 인코딩 발열·지연이 늘어납니다.");
-            AttachGuide(_cmbMaxSize, "최대 크기 (-m)", "일반 미러링 시 화면 긴 변의 최대 픽셀을 제한합니다. 가상 디스플레이를 쓰면 무시됩니다. 고해상도 기기에서 버벅일 때 1920이나 1600으로 줄여보세요.");
-            AttachGuide(_cmbMaxFps, "최대 FPS", "0(자동)을 권장합니다. 일부 안드로이드 기기에서는 60으로 제한하면 오히려 프레임이 낮아질 수 있으니 문제 시 0으로 두세요.");
-            AttachGuide(_cmbRenderer, "PC 렌더러", "자동(Direct3D11)은 PC GPU 하드웨어 가속(D3D11VA)을 사용해 가장 빠릅니다. 화면이 깨지거나 안 나올 때만 OpenGL을 시도하세요.");
-            AttachGuide(_rbModeKeymap, "키보드 + 마우스 (키 매핑) 모드", "scrcpy 자체 입력 충돌을 자동 차단하고, 미러링 시작 즉시 WASD · 마우스 시점 회전 · 스킬 키 매핑과 일반 클릭 터치를 자동 연결합니다.");
-            AttachGuide(_rbModeGamepad, "게임패드 (Xbox / PS) 모드", "PC에 연결된 물리 컨트롤러를 UHID 게임패드(-G)로 인식시키며, 우클릭 뒤로가기 충돌을 방지합니다.");
-            AttachGuide(_rbModeNormal, "일반 미러링 모드", "패드나 키 매핑 없이 스마트폰 화면을 일반 마우스와 키보드로 편하게 조작할 때 사용합니다.");
-            AttachGuide(_chkTurnScreenOff, "폰 화면 끄기 (-S)", "미러링 중 스마트폰 화면을 꺼서 발열과 배터리 소모를 줄입니다. 간혹 기기 절전 때문에 프레임이 떨어지면 체크를 해제해 보세요.");
-            AttachGuide(_chkStayAwake, "절전 방지 (-w)", "연결 중 스마트폰이 자동으로 잠기지 않도록 유지합니다.");
-            AttachGuide(_chkLowLatency, "저지연 인코딩", "하드웨어 인코더에 low-latency=1 옵션을 전달해 PC 화면이 반박자 밀리는 현상을 줄여줍니다.");
-            AttachGuide(_chkNoAudio, "소리 끄기", "오디오 전송을 끕니다. 블루투스 이어폰을 폰에 직접 연결해 쓰거나, 오디오 버퍼로 인한 지연 여부를 테스트할 때 유용합니다.");
-            AttachGuide(_chkAudioSafe, "오디오 안정화 (--audio-buffer=120)", "소리가 째지거나 지직거리며 끊길 때 오디오 버퍼에 여유(120ms)를 주어 사운드 깨짐을 방지합니다.");
-            AttachGuide(_chkFullscreen, "전체화면 시작 (-f)", "실행 즉시 PC 모니터 전체화면으로 띄웁니다. 실행 중에도 Alt + F 키로 언제든 전환할 수 있습니다.");
-            AttachGuide(_chkAlwaysOnTop, "항상 위에 (실시간)", "미러링 창을 항상 다른 창 위에 고정합니다. 미러링 도중에도 체크를 켜거나 끄면 즉시 반영됩니다.");
-            AttachGuide(_chkRememberWin, "창 위치 · 크기 기억", "창모드에서 마지막으로 두었던 미러링 창의 모니터 위치와 크기를 기억해 다음 실행 때 똑같은 자리에 띄워줍니다.");
-            AttachGuide(_chkPrintFps, "화면 FPS 오버레이", "미러링 창 좌측 상단에 클릭을 방해하지 않는 투명 FPS 표시기를 띄웁니다. FPS 수치는 로그창을 어지럽히지 않고 오버레이와 배지에만 표시됩니다.");
-            AttachGuide(_chkGamepadKbAssist, "게임패드 모드 키보드 보조 매핑", "게임패드 모드에서도 키보드 액션 매핑(예: 모험단 춤 방향키)을 함께 사용할 수 있습니다. 마우스 시점과 클릭은 패드/일반 조작을 방해하지 않도록 제외됩니다.");
-            AttachGuide(_btnScreenshot, "화면 캡처 (.png)", "연결된 기기의 현재 화면(가상 디스플레이 실행 중이면 해당 화면 포함)을 PNG 이미지로 즉시 저장합니다.");
-            AttachGuide(_btnRecordToggle, "화면 녹화 시작 / 중지 (.mp4)", "클릭하면 미러링을 끊지 않고 즉시 백그라운드 녹화를 시작합니다. 다시 눌러 녹화를 중지하면 지정 폴더에 MP4 파일로 저장됩니다.");
-            AttachGuide(_chkVirtualDisplay, "가상 디스플레이 (--new-display)", "폴더블·태블릿 등 화면 비율이 다른 기기에서도 PC 모니터에 꽉 차는 16:9(1920x1080 등) 가상 화면을 별도로 띄웁니다.");
-            AttachGuide(_cmbVdSpec, "가상 디스플레이 해상도", "1920x1080이 가장 부드럽고, 2560x1440은 선명하지만 기기 GPU 부하가 큽니다. 뒤에 /320 처럼 DPI를 붙일 수 있습니다.");
-            AttachGuide(_chkNoVdDecorations, "DeX / 시스템 UI 건너뛰기", "데스크톱 UI(예: 삼성 DeX) 대신 선택한 앱만 16:9 화면으로 단독 실행합니다. 반드시 아래에서 '실행 앱'을 선택해야 검은 화면이 안 뜹니다.");
-            AttachGuide(_cmbApps, "앱 바로 실행 (--start-app)", "미러링 시작과 동시에 선택한 앱을 바로 켭니다. 기기가 연결되면 설치된 앱 목록을 자동으로 불러옵니다.");
-            AttachGuide(_txtAppSearch, "앱 검색", "앱 이름이나 패키지명의 일부를 입력하면 오른쪽 목록이 즉시 필터링됩니다. (예: 게임 이름, 패키지명)");
+            // HuntLink v2.0 Sidebar, Presets, Home Summary, Codex, Extra Args, Collapsible Log
+            _navHome = (RadioButton)root.FindName("navHome");
+            _navKeymap = (RadioButton)root.FindName("navKeymap");
+            _navQuest = (RadioButton)root.FindName("navQuest");
+            _navCodex = (RadioButton)root.FindName("navCodex");
+            _navAdvanced = (RadioButton)root.FindName("navAdvanced");
+            _pageHome = (FrameworkElement)root.FindName("pageHome");
+            _pageKeymap = (FrameworkElement)root.FindName("pageKeymap");
+            _pageQuest = (FrameworkElement)root.FindName("pageQuest");
+            _pageCodex = (FrameworkElement)root.FindName("pageCodex");
+            _pageAdvanced = (FrameworkElement)root.FindName("pageAdvanced");
+
+            _btnPreset1080 = (Button)root.FindName("btnPreset1080");
+            _btnPreset1440 = (Button)root.FindName("btnPreset1440");
+            _btnPresetNative = (Button)root.FindName("btnPresetNative");
+            _btnPresetWifi = (Button)root.FindName("btnPresetWifi");
+
+            _bdHomeQuestCard = (Border)root.FindName("bdHomeQuestCard");
+            _btnGoQuestTab = (Button)root.FindName("btnGoQuestTab");
+            _txtHomeQuestMeta = (TextBlock)root.FindName("txtHomeQuestMeta");
+            _txtHomeQuestRec = (TextBlock)root.FindName("txtHomeQuestRec");
+            _btnBottomOpenFolder = (Button)root.FindName("btnBottomOpenFolder");
+            _btnToggleLog = (Button)root.FindName("btnToggleLog");
+            _bdLogDrawer = (Border)root.FindName("bdLogDrawer");
+
+            _txtCodexSearch = (TextBox)root.FindName("txtCodexSearch");
+            _txtCodexSearchHint = (TextBlock)root.FindName("txtCodexSearchHint");
+            _cmbCodexRegion = (ComboBox)root.FindName("cmbCodexRegion");
+            _cmbCodexSpecies = (ComboBox)root.FindName("cmbCodexSpecies");
+            _pnlCodexList = (StackPanel)root.FindName("pnlCodexList");
+
+            _txtExtraArgs = (TextBox)root.FindName("txtExtraArgs");
+            _txtExtraArgsHint = (TextBlock)root.FindName("txtExtraArgsHint");
+
+            _pnlConnStatus = (DockPanel)root.FindName("pnlConnStatus");
+            _bdConnBadge = (Border)root.FindName("bdConnBadge");
+            _txtConnBadge = (TextBlock)root.FindName("txtConnBadge");
+            _bdBattBadge = (Border)root.FindName("bdBattBadge");
+            _txtBattBadge = (TextBlock)root.FindName("txtBattBadge");
+            _txtConnDetail = (TextBlock)root.FindName("txtConnDetail");
+
+            _batteryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+            _batteryTimer.Tick += async (s, e) =>
+            {
+                var d = _cmbDevices != null ? _cmbDevices.SelectedItem as DeviceInfo : null;
+                if (d != null && d.State == "device")
+                    await RefreshBatteryBadgeAsync(d);
+            };
+            _batteryTimer.Start();
+
+            // Interactive guides + tooltips (localized via Loc keys)
+            AttachGuide(_btnDownloadScrcpy, "g_dl_t", "g_dl_b");
+            AttachGuide(_btnSetupGuide, "g_setup_t", "g_setup_b");
+            AttachGuide(_btnShortcuts, "g_short_t", "g_short_b");
+            AttachGuide(_btnUsbToWifi, "g_u2w_t", "g_u2w_b");
+            AttachGuide(_btnDisconnectWifi, "g_discw_t", "g_discw_b");
+            AttachGuide(_btnRestartAdb, "g_adb_t", "g_adb_b");
+            AttachGuide(_cmbCodec, "g_codec_t", "g_codec_b");
+            AttachGuide(_txtBitrate, "g_br_t", "g_br_b");
+            AttachGuide(_cmbMaxSize, "g_ms_t", "g_ms_b");
+            AttachGuide(_cmbMaxFps, "g_fps_t", "g_fps_b");
+            AttachGuide(_cmbRenderer, "g_ren_t", "g_ren_b");
+            AttachGuide(_rbModeKeymap, "g_mkm_t", "g_mkm_b");
+            AttachGuide(_rbModeGamepad, "g_mgp_t", "g_mgp_b");
+            AttachGuide(_rbModeNormal, "g_mnm_t", "g_mnm_b");
+            AttachGuide(_chkTurnScreenOff, "g_soff_t", "g_soff_b");
+            AttachGuide(_chkStayAwake, "g_awake_t", "g_awake_b");
+            AttachGuide(_chkLowLatency, "g_ll_t", "g_ll_b");
+            AttachGuide(_chkNoAudio, "g_noaud_t", "g_noaud_b");
+            AttachGuide(_chkAudioSafe, "g_audsafe_t", "g_audsafe_b");
+            AttachGuide(_chkFullscreen, "g_fs_t", "g_fs_b");
+            AttachGuide(_chkAlwaysOnTop, "g_aot_t", "g_aot_b");
+            AttachGuide(_chkRememberWin, "g_remwin_t", "g_remwin_b");
+            AttachGuide(_chkPrintFps, "g_pfps_t", "g_pfps_b");
+            AttachGuide(_chkGamepadKbAssist, "g_gpkb_t", "g_gpkb_b");
+            AttachGuide(_btnScreenshot, "g_shot_t", "g_shot_b");
+            AttachGuide(_btnRecordToggle, "g_rec_t", "g_rec_b");
+            AttachGuide(_chkVirtualDisplay, "g_vd_t", "g_vd_b");
+            AttachGuide(_cmbVdSpec, "g_vds_t", "g_vds_b");
+            AttachGuide(_chkNoVdDecorations, "g_nodecor_t", "g_nodecor_b");
+            AttachGuide(_cmbApps, "g_apps_t", "g_apps_b");
+            AttachGuide(_txtAppSearch, "g_appsearch_t", "g_appsearch_b");
 
             // Events
             _btnUpdate.Click += BtnUpdate_Click;
@@ -1318,9 +658,9 @@ namespace ScrcpyLauncher
             _btnClearLog.Click += (s, e) => _txtLog.Clear();
 
             // Keymap events
-            AttachGuide(_btnImportKmp, "LDPlayer .kmp 불러오기", "LD플레이어에서 사용하던 .kmp 키매핑 파일을 그대로 불러와 적용합니다.");
-            AttachGuide(_btnKmStart, "키 매핑 시작", "scrcpy-server 멀티터치 제어 소켓을 연결해 WASD 이동, 마우스 시점 회전, 스킬 키를 1~3ms 저지연으로 입력합니다. 먼저 미러링을 시작해 주세요.");
-            AttachGuide(_btnKmEditOverlay, "화면에서 키 배치", "실행 중인 미러링 화면 위에 반투명 편집 오버레이를 띄워 드래그 앤 드롭으로 키 위치를 직접 맞춥니다.");
+            AttachGuide(_btnImportKmp, "g_kmp_t", "g_kmp_b");
+            AttachGuide(_btnKmStart, "g_kmstart_t", "g_kmstart_b");
+            AttachGuide(_btnKmEditOverlay, "g_kmedit_t", "g_kmedit_b");
 
             _cmbKeyProfiles.SelectionChanged += (s, e) =>
             {
@@ -1333,6 +673,7 @@ namespace ScrcpyLauncher
                     if (_keymapOverlay != null) _keymapOverlay.SetProfile(_activeProfile);
                     UpdateModeSummary();
                     UpdateUiStates();
+                    UpdateMirrorWindowTitle();
                 }
             };
             _btnImportKmp.Click += BtnImportKmp_Click;
@@ -1343,14 +684,15 @@ namespace ScrcpyLauncher
             _btnReloadProfiles.Click += (s, e) => { LoadKeymapProfiles(_activeProfile != null ? _activeProfile.Name : null); AppendLog("[키 매핑] 프로파일 목록을 새로고침했습니다."); };
             _btnExportCode.Click += BtnExportCode_Click;
             _btnImportCode.Click += BtnImportCode_Click;
-            AttachGuide(_btnExportCode, "프리셋 코드 복사", "현재 프로파일을 초압축 한 줄 공유 코드(SLKM2:...)로 클립보드에 복사합니다. 댓글이나 커뮤니티에 바로 공유할 수 있습니다.");
-            AttachGuide(_btnImportCode, "프리셋 코드 불러오기", "다른 사람이 공유한 프리셋 코드(SLKM2:... / SLKM1:...)를 붙여넣어 내 프로파일 목록에 즉시 추가합니다.");
+            AttachGuide(_btnExportCode, "g_expcode_t", "g_expcode_b");
+            AttachGuide(_btnImportCode, "g_impcode_t", "g_impcode_b");
             _btnKmStart.Click += BtnKmStart_Click;
             _btnKmStop.Click += (s, e) => StopKeymap();
             _btnKmEditOverlay.Click += BtnKmEditOverlay_Click;
             _btnKmAddKey.Click += BtnKmAddKey_Click;
             _btnKmDelKey.Click += BtnKmDelKey_Click;
 
+            _btnQuestBatchScan.Click += async (s, e) => await ScanQuestListBatchAsync();
             _btnQuestScanOne.Click += async (s, e) => await ScanCurrentQuestAsync(true);
             _btnQuestUndo.Click += (s, e) =>
             {
@@ -1360,15 +702,55 @@ namespace ScrcpyLauncher
                 RefreshQuestPlannerUi();
                 AppendLog("[퀘스트] 마지막 수집 취소: " + last.ObjectiveText);
             };
-            _btnQuestSpeciesGuide.Click += (s, e) =>
-            {
-                MessageBox.Show(this, QuestOcrService.GetSpeciesGuideText(), "종족별 몬스터 & 약점 도감", MessageBoxButton.OK, MessageBoxImage.Information);
-            };
             _btnQuestClear.Click += (s, e) =>
             {
                 _scannedQuests.Clear();
                 RefreshQuestPlannerUi();
                 AppendLog("[퀘스트] 보유 퀘스트 목록을 모두 비웠습니다.");
+            };
+
+            // HuntLink v2.0 Navigation, Presets, Codex, Bottom Bar & Extra Args events
+            _navHome.Checked += (s, e) => SwitchPage("home");
+            _navKeymap.Checked += (s, e) => SwitchPage("keymap");
+            _navQuest.Checked += (s, e) => SwitchPage("quest");
+            _navCodex.Checked += (s, e) => SwitchPage("codex");
+            _navAdvanced.Checked += (s, e) => SwitchPage("advanced");
+
+            _btnPreset1080.Click += (s, e) => ApplyVisualPreset("1080p");
+            _btnPreset1440.Click += (s, e) => ApplyVisualPreset("1440p");
+            _btnPresetNative.Click += (s, e) => ApplyVisualPreset("native");
+            _btnPresetWifi.Click += (s, e) => ApplyVisualPreset("wifi");
+
+            AttachGuide(_btnPreset1080, "g_p1080_t", "g_p1080_b");
+            AttachGuide(_btnPreset1440, "g_p1440_t", "g_p1440_b");
+            AttachGuide(_btnPresetNative, "g_pnat_t", "g_pnat_b");
+            AttachGuide(_btnPresetWifi, "g_pwifi_t", "g_pwifi_b");
+            AttachGuide(_btnQuestBatchScan, "g_qbatch_t", "g_qbatch_b");
+            AttachGuide(_txtExtraArgs, "g_extra_t", "g_extra_b");
+
+            _btnGoQuestTab.Click += (s, e) => { _navQuest.IsChecked = true; };
+            _bdHomeQuestCard.MouseLeftButtonUp += (s, e) => { _navQuest.IsChecked = true; };
+            _btnBottomOpenFolder.Click += BtnOpenRecord_Click;
+            _btnToggleLog.Click += (s, e) =>
+            {
+                bool open = _bdLogDrawer.Visibility != Visibility.Visible;
+                _bdLogDrawer.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+                _btnToggleLog.Content = open ? Loc.T("btn_toggle_log_close") : Loc.T("btn_toggle_log_open");
+            };
+
+            _txtCodexSearch.TextChanged += (s, e) =>
+            {
+                if (_txtCodexSearchHint != null)
+                    _txtCodexSearchHint.Visibility = string.IsNullOrEmpty(_txtCodexSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
+                RefreshMonsterCodexUi();
+            };
+            _cmbCodexRegion.SelectionChanged += (s, e) => RefreshMonsterCodexUi();
+            _cmbCodexSpecies.SelectionChanged += (s, e) => RefreshMonsterCodexUi();
+
+            _txtExtraArgs.TextChanged += (s, e) =>
+            {
+                if (_txtExtraArgsHint != null)
+                    _txtExtraArgsHint.Visibility = string.IsNullOrEmpty(_txtExtraArgs.Text) ? Visibility.Visible : Visibility.Collapsed;
             };
             _btnQuestResetDaily.Click += (s, e) =>
             {
@@ -1378,9 +760,9 @@ namespace ScrcpyLauncher
                 UpdateDailyQuestCounterUi();
                 AppendLog("[퀘스트] 오늘 완료 카운터를 0으로 초기화했습니다.");
             };
-            AttachGuide(_chkKmNewWheel, "휠 드래그 키 (부위 조준 · 아이템/탄환 휠)", "체크 후 추가하면 키를 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다. (예: Tab 부위 조준, G 아이템/탄환 휠)");
-            AttachGuide(_chkKmRight, "우클릭 보조", "시점 고정 ON/OFF 모두에서 마우스 우클릭을 지정된 버튼(특수 공격·회피·탄 선택 등)으로 사용합니다. 일반 모드에서 좌클릭은 화면 터치로 그대로 유지됩니다.");
-            AttachGuide(_chkKmRightWheel, "우클릭 휠 드래그 (헤보 탄 선택 등)", "체크하면 마우스 우클릭을 꾹 누른 채 마우스를 움직여 방향을 선택하고, 떼면 확정되는 휠 선택 키로 작동합니다.");
+            AttachGuide(_chkKmNewWheel, "g_newwheel_t", "g_newwheel_b");
+            AttachGuide(_chkKmRight, "g_rclick_t", "g_rclick_b");
+            AttachGuide(_chkKmRightWheel, "g_rwheel_t", "g_rwheel_b");
 
             _txtKmNewKey.PreviewKeyDown += (s, e) =>
             {
@@ -1429,7 +811,7 @@ namespace ScrcpyLauncher
                     e.Handled = true;
                 }
             };
-            AttachGuide(_txtKmNewKey, "매핑 키 입력 (조합키 지원)", "이 칸을 클릭한 뒤 원하는 키(예: Q, Ctrl+1, Shift+E, Alt+2) 또는 마우스 4·5·휠클릭 버튼을 누르면 등록할 수 있습니다.");
+            AttachGuide(_txtKmNewKey, "g_newkey_t", "g_newkey_b");
 
             Action onKmChanged = () =>
             {
@@ -1474,6 +856,7 @@ namespace ScrcpyLauncher
                 UpdateUiStates();
                 UpdateCommandPreview();
                 var dev = _cmbDevices.SelectedItem as DeviceInfo;
+                var _ = RefreshConnectionSpeedAsync(dev);
                 if (dev != null && dev.State == "device" && dev.Serial != _appsLoadedForSerial)
                     await LoadAppsAsync(false);
             };
@@ -1560,19 +943,39 @@ namespace ScrcpyLauncher
             _cmbApps.SelectionChanged += (s, e) => onOptChanged();
         }
 
-        private void AttachGuide(FrameworkElement el, string title, string body)
+        private void AttachGuide(FrameworkElement el, string titleKey, string bodyKey)
         {
-            el.ToolTip = body;
+            if (el == null) return;
+            _guideBindings.Add(Tuple.Create(el, titleKey, bodyKey));
+            el.ToolTip = Loc.T(bodyKey);
             el.MouseEnter += (s, e) =>
             {
-                _txtGuideTitle.Text = title;
-                _txtGuideBody.Text = body;
+                _txtGuideTitle.Text = Loc.T(titleKey);
+                _txtGuideBody.Text = Loc.T(bodyKey);
             };
             el.MouseLeave += (s, e) =>
             {
                 _txtGuideTitle.Text = Loc.T("guide_title");
                 _txtGuideBody.Text = Loc.T("guide_body");
             };
+        }
+
+        private void SetComboItemContentByTag(ComboBox cmb, string tag, string content)
+        {
+            if (cmb == null) return;
+            bool wasSelected = false;
+            int selIdx = cmb.SelectedIndex;
+            for (int i = 0; i < cmb.Items.Count; i++)
+            {
+                var item = cmb.Items[i] as ComboBoxItem;
+                if (item != null && item.Tag != null && string.Equals(item.Tag.ToString(), tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    item.Content = content;
+                    if (i == selIdx) wasSelected = true;
+                }
+            }
+            if (wasSelected && cmb.IsEditable)
+                cmb.Text = content;
         }
 
         private void SetTextByName(FrameworkElement root, string name, string text)
@@ -1609,12 +1012,52 @@ namespace ScrcpyLauncher
             SetTextByName(root, "txtModeNmTitle", Loc.T("mode_nm_title"));
             SetTextByName(root, "txtModeNmSub", Loc.T("mode_nm_sub"));
 
-            var tConn = root.FindName("tabConn") as TabItem;
-            if (tConn != null) tConn.Header = Loc.T("tab_conn");
-            var tKm = root.FindName("tabKeymap") as TabItem;
-            if (tKm != null) tKm.Header = Loc.T("tab_keymap");
-            var tQuest = root.FindName("tabQuest") as TabItem;
-            if (tQuest != null) tQuest.Header = Loc.T("tab_quest");
+            SetTextByName(root, "txtNavHome", Loc.T("tab_conn"));
+            SetTextByName(root, "txtNavKeymap", Loc.T("tab_keymap"));
+            SetTextByName(root, "txtNavQuest", Loc.T("tab_quest"));
+            SetTextByName(root, "txtNavCodex", Loc.T("tab_codex"));
+            SetTextByName(root, "txtNavAdvanced", Loc.T("tab_advanced"));
+
+            SetTextByName(root, "lblPresetsTitle", Loc.T("lbl_presets_title"));
+            if (_btnPreset1080 != null) _btnPreset1080.Content = Loc.T("preset_1080");
+            if (_btnPreset1440 != null) _btnPreset1440.Content = Loc.T("preset_1440");
+            if (_btnPresetNative != null) _btnPresetNative.Content = Loc.T("preset_native");
+            if (_btnPresetWifi != null) _btnPresetWifi.Content = Loc.T("preset_wifi");
+            SetTextByName(root, "lblHomeQuestTitle", Loc.T("lbl_home_quest"));
+            if (_btnGoQuestTab != null) _btnGoQuestTab.Content = Loc.T("btn_go_quest");
+            SetTextByName(root, "lblQuickOpts", Loc.T("lbl_quick_opts"));
+            if (_btnBottomOpenFolder != null) _btnBottomOpenFolder.Content = Loc.T("btn_bottom_folder");
+            if (_btnToggleLog != null && _bdLogDrawer != null)
+                _btnToggleLog.Content = _bdLogDrawer.Visibility == Visibility.Visible ? Loc.T("btn_toggle_log_close") : Loc.T("btn_toggle_log_open");
+
+            SetTextByName(root, "lblQuestSec1", Loc.T("q_sec1"));
+            SetTextByName(root, "lblQuestSec2", Loc.T("q_sec2"));
+            if (_btnQuestBatchScan != null) _btnQuestBatchScan.Content = Loc.T("q_btn_batch");
+            if (_btnQuestScanOne != null) _btnQuestScanOne.Content = Loc.T("q_btn_one");
+            if (_btnQuestUndo != null) _btnQuestUndo.Content = Loc.T("q_btn_undo");
+            if (_btnQuestResetDaily != null) _btnQuestResetDaily.Content = Loc.T("q_btn_reset");
+            if (_btnQuestClear != null) _btnQuestClear.Content = Loc.T("q_btn_clear");
+
+            SetTextByName(root, "lblCodexTitle", Loc.T("codex_title"));
+            SetTextByName(root, "txtCodexSearchHint", Loc.T("codex_search_hint"));
+            if (_cmbCodexRegion != null && _cmbCodexRegion.Items.Count > 0)
+            {
+                var c0 = _cmbCodexRegion.Items[0] as ComboBoxItem;
+                if (c0 != null) c0.Content = Loc.T("codex_all_regions");
+            }
+            if (_cmbCodexSpecies != null && _cmbCodexSpecies.Items.Count > 0)
+            {
+                var s0 = _cmbCodexSpecies.Items[0] as ComboBoxItem;
+                if (s0 != null) s0.Content = Loc.T("codex_all_species");
+                var sLast = _cmbCodexSpecies.Items[_cmbCodexSpecies.Items.Count - 1] as ComboBoxItem;
+                if (sLast != null) sLast.Content = Loc.T("codex_radiant_only");
+            }
+
+            SetTextByName(root, "lblExtraArgs", Loc.T("lbl_extra_args"));
+            SetTextByName(root, "txtExtraArgsHint", Loc.T("hint_extra_args"));
+            SetTextByName(root, "lblAdvSec3", Loc.T("lbl_adv_sec3"));
+            UpdateDailyQuestCounterUi();
+            if (_txtQuestCount != null) _txtQuestCount.Text = Loc.F("q_count_fmt", _scannedQuests.Count);
 
             SetTextByName(root, "txtSec1Title", Loc.T("sec1_title"));
             _btnRefreshDevices.Content = Loc.T("btn_refresh");
@@ -1690,6 +1133,44 @@ namespace ScrcpyLauncher
 
             _txtGuideTitle.Text = Loc.T("guide_title");
             _txtGuideBody.Text = Loc.T("guide_body");
+            foreach (var gb in _guideBindings)
+                gb.Item1.ToolTip = Loc.T(gb.Item3);
+            var bdQuestDaily = root.FindName("bdQuestDaily") as Border;
+            if (bdQuestDaily != null) bdQuestDaily.ToolTip = Loc.T("q_daily_tip");
+
+            // Localize dropdown items & empty-device / none-app placeholders
+            SetComboItemContentByTag(_cmbCodec, "h264", Loc.T("cmb_h264"));
+            SetComboItemContentByTag(_cmbCodec, "h265", Loc.T("cmb_h265"));
+            SetComboItemContentByTag(_cmbMaxSize, "0", Loc.T("cmb_maxsize_0"));
+            SetComboItemContentByTag(_cmbMaxFps, "0", Loc.T("cmb_maxfps_0"));
+            SetComboItemContentByTag(_cmbRenderer, "auto", Loc.T("cmb_renderer_auto"));
+            if (_devices.Count == 0 && _cmbDevices != null && _cmbDevices.Items.Count == 1 && _cmbDevices.Items[0] is string)
+            {
+                _cmbDevices.Items[0] = Loc.T("dev_none");
+                _cmbDevices.SelectedIndex = 0;
+            }
+            if (_cmbApps != null)
+            {
+                for (int i = 0; i < _cmbApps.Items.Count; i++)
+                {
+                    var ai = _cmbApps.Items[i] as AppItem;
+                    if (ai != null && string.IsNullOrEmpty(ai.PackageName))
+                    {
+                        bool sel = (_cmbApps.SelectedIndex == i);
+                        _cmbApps.Items[i] = new AppItem { Name = Loc.T("app_none"), PackageName = "" };
+                        if (sel) _cmbApps.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+            if (_scannedQuests.Count == 0 && _pnlQuestPlans != null)
+                RefreshQuestPlannerUi();
+            var curDev = _cmbDevices != null ? _cmbDevices.SelectedItem as DeviceInfo : null;
+            if (curDev != null && curDev.State == "device")
+            {
+                var _ = RefreshConnectionSpeedAsync(curDev);
+            }
+
             _btnStop.Content = Loc.T("btn_stop");
             _btnScreenshot.Content = Loc.T("btn_screenshot");
             SetTextByName(root, "lblLog", Loc.T("lbl_log"));
@@ -1765,6 +1246,12 @@ namespace ScrcpyLauncher
                 {
                     handled = true;
                     var _ = ScanCurrentQuestAsync(true);
+                    return IntPtr.Zero;
+                }
+                if (id == HOTKEY_QUEST_BATCH)
+                {
+                    handled = true;
+                    var _ = ScanQuestListBatchAsync();
                     return IntPtr.Zero;
                 }
                 if (id == HOTKEY_SCREENSHOT)
@@ -1910,6 +1397,8 @@ namespace ScrcpyLauncher
                 {
                     if (!_questHotKeyRegistered)
                         _questHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_QUEST_SCAN, 0, VK_F8);
+                    if (!_questBatchHotKeyRegistered)
+                        _questBatchHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_QUEST_BATCH, 0, VK_F7);
                     if (!_screenshotHotKeyRegistered)
                         _screenshotHotKeyRegistered = RegisterHotKey(hwnd, HOTKEY_SCREENSHOT, 0, VK_F12);
                     if (!_chatHotKeyRegistered)
@@ -1921,6 +1410,11 @@ namespace ScrcpyLauncher
                     {
                         UnregisterHotKey(hwnd, HOTKEY_QUEST_SCAN);
                         _questHotKeyRegistered = false;
+                    }
+                    if (_questBatchHotKeyRegistered)
+                    {
+                        UnregisterHotKey(hwnd, HOTKEY_QUEST_BATCH);
+                        _questBatchHotKeyRegistered = false;
                     }
                     if (_screenshotHotKeyRegistered)
                     {
@@ -2073,7 +1567,7 @@ namespace ScrcpyLauncher
 
                     if (_devices.Count == 0)
                     {
-                        _cmbDevices.Items.Add("(연결된 기기 없음 — USB를 꽂거나 무선 연결하세요)");
+                        _cmbDevices.Items.Add(Loc.T("dev_none"));
                         _cmbDevices.SelectedIndex = 0;
                     }
                     else
@@ -2095,6 +1589,102 @@ namespace ScrcpyLauncher
             {
                 _isRefreshingDevices = false;
                 UpdateUiStates();
+            }
+        }
+
+        private async Task RefreshConnectionSpeedAsync(DeviceInfo dev)
+        {
+            if (_pnlConnStatus == null) return;
+            int seq = ++_connProbeSeq;
+            if (dev == null || dev.State != "device")
+            {
+                _pnlConnStatus.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            try
+            {
+                var info = await ConnectionInfoHelper.ProbeAsync(_adb, dev);
+                if (seq != _connProbeSeq) return;
+                if (info == null)
+                {
+                    _pnlConnStatus.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                string bg = "#E6EFE9", bd = "#B8D0C0", fg = "#1E462E";
+                if (info.Tier == "mid")
+                {
+                    bg = "#FDF6E7"; bd = "#E6C98B"; fg = "#8C5E14";
+                }
+                else if (info.Tier == "warn")
+                {
+                    bg = "#FEF2F2"; bd = "#FECACA"; fg = "#B91C1C";
+                }
+
+                _bdConnBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg));
+                _bdConnBadge.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bd));
+                _txtConnBadge.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg));
+                _txtConnBadge.Text = info.BadgeText;
+                _txtConnDetail.Text = info.DetailText;
+                _pnlConnStatus.ToolTip = info.TooltipText;
+                _pnlConnStatus.Visibility = Visibility.Visible;
+
+                await RefreshBatteryBadgeAsync(dev);
+            }
+            catch
+            {
+                if (seq == _connProbeSeq)
+                    _pnlConnStatus.Visibility = Visibility.Collapsed;
+            }
+        }
+
+        private async Task RefreshBatteryBadgeAsync(DeviceInfo dev)
+        {
+            if (_bdBattBadge == null || _isProbingBattery) return;
+            if (dev == null || dev.State != "device")
+            {
+                _bdBattBadge.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            _isProbingBattery = true;
+            try
+            {
+                var batt = await ConnectionInfoHelper.ProbeBatteryAsync(_adb, dev);
+                var cur = _cmbDevices != null ? _cmbDevices.SelectedItem as DeviceInfo : null;
+                if (cur == null || cur.Serial != dev.Serial || batt == null)
+                {
+                    if (batt == null) _bdBattBadge.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                string bg = "#E6EFE9", bd = "#B8D0C0", fg = "#1E462E";
+                if (batt.Tier == "warm")
+                {
+                    bg = "#FDF6E7"; bd = "#E6C98B"; fg = "#8C5E14";
+                }
+                else if (batt.Tier == "hot")
+                {
+                    bg = "#FEF2F2"; bd = "#FECACA"; fg = "#B91C1C";
+                }
+
+                _bdBattBadge.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bg));
+                _bdBattBadge.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(bd));
+                _txtBattBadge.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(fg));
+                _txtBattBadge.Text = batt.BadgeText;
+                _bdBattBadge.ToolTip = batt.TooltipText;
+                _bdBattBadge.Visibility = Visibility.Visible;
+                _liveBattText = batt.BadgeText;
+                UpdateMirrorWindowTitle();
+            }
+            catch
+            {
+                _bdBattBadge.Visibility = Visibility.Collapsed;
+            }
+            finally
+            {
+                _isProbingBattery = false;
             }
         }
 
@@ -2238,6 +1828,28 @@ namespace ScrcpyLauncher
                 var apps = await _adb.GetInstalledAppsAsync(dev.Serial);
                 _allApps = apps;
                 _appsLoadedForSerial = dev.Serial;
+
+                // Auto-select Monster Hunter Outlanders for first-time users if no app is saved yet
+                if (string.IsNullOrEmpty(_settings.StartAppPackage) && _allApps != null && _allApps.Count > 0)
+                {
+                    AppItem mho = _allApps.FirstOrDefault(a =>
+                        string.Equals(a.PackageName, "com.garena.game.mho", StringComparison.OrdinalIgnoreCase));
+                    if (mho == null)
+                    {
+                        mho = _allApps.FirstOrDefault(a =>
+                            (a.PackageName != null && (a.PackageName.IndexOf("outlanders", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                       a.PackageName.IndexOf(".mho", StringComparison.OrdinalIgnoreCase) >= 0)) ||
+                            (a.Name != null && (a.Name.IndexOf("outlanders", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                a.Name.Contains("아웃랜더스") || a.Name.Contains("アウトランダーズ"))));
+                    }
+                    if (mho != null)
+                    {
+                        _settings.StartAppPackage = mho.PackageName;
+                        _settings.Save();
+                        AppendLog("[앱 목록] 몬스터헌터 아웃랜더스 자동 선택됨: " + mho.PackageName);
+                    }
+                }
+
                 FilterApps(_settings.StartAppPackage);
                 AppendLog(string.Format("[앱 목록] 사용자 설치 앱 {0}개를 불러왔습니다.", _allApps.Count));
             }
@@ -2365,6 +1977,10 @@ namespace ScrcpyLauncher
             var selectedApp = _cmbApps.SelectedItem as AppItem;
             if (selectedApp != null && !string.IsNullOrEmpty(selectedApp.PackageName))
                 args.Add("--start-app=" + selectedApp.PackageName);
+
+            string extra = _txtExtraArgs != null ? (_txtExtraArgs.Text ?? "").Trim() : "";
+            if (!string.IsNullOrEmpty(extra))
+                args.Add(extra);
 
             return string.Join(" ", args);
         }
@@ -2876,6 +2492,8 @@ namespace ScrcpyLauncher
                     {
                         _bdFpsBadge.Visibility = Visibility.Visible;
                         _txtFpsBadge.Text = "FPS: " + fps;
+                        _liveFpsText = fps.ToString();
+                        UpdateMirrorWindowTitle();
 
                         EnsureFpsOverlay();
                         if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
@@ -2889,6 +2507,8 @@ namespace ScrcpyLauncher
                 if (line.IndexOf("FPS counter stopped", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     _bdFpsBadge.Visibility = Visibility.Collapsed;
+                    _liveFpsText = "";
+                    UpdateMirrorWindowTitle();
                     if (_fpsOverlay != null && _fpsOverlay.IsVisible) _fpsOverlay.Hide();
                     return;
                 }
@@ -2914,10 +2534,53 @@ namespace ScrcpyLauncher
                 _cursorHider.HideSafe();
         }
 
+        private void UpdateMirrorWindowTitle(IntPtr hwndOverride = default(IntPtr))
+        {
+            try
+            {
+                if (_scrcpyProcess == null || _scrcpyProcess.HasExited) return;
+                IntPtr hwnd = hwndOverride;
+                if (hwnd == IntPtr.Zero)
+                {
+                    _scrcpyProcess.Refresh();
+                    hwnd = _scrcpyProcess.MainWindowHandle;
+                }
+                if (hwnd == IntPtr.Zero) return;
+
+                var parts = new List<string>();
+                parts.Add("HuntLink");
+
+                bool showProfile = _activeProfile != null && !string.IsNullOrWhiteSpace(_activeProfile.Name) &&
+                    ((_rbModeKeymap != null && _rbModeKeymap.IsChecked == true) ||
+                     (_rbModeGamepad != null && _rbModeGamepad.IsChecked == true && _chkGamepadKbAssist != null && _chkGamepadKbAssist.IsChecked == true));
+                if (showProfile)
+                    parts.Add("[" + _activeProfile.Name + "]");
+
+                if (!string.IsNullOrEmpty(_liveFpsText))
+                    parts.Add(_liveFpsText + " FPS");
+
+                if (!string.IsNullOrEmpty(_liveBattText))
+                    parts.Add(_liveBattText);
+
+                if (_scannedQuests != null && _scannedQuests.Count > 0 && !string.IsNullOrEmpty(_liveQuestRecShort))
+                    parts.Add("📋 " + _liveQuestRecShort);
+
+                string title = string.Join("  |  ", parts.ToArray());
+                if (title != _lastAppliedMirrorTitle)
+                {
+                    _lastAppliedMirrorTitle = title;
+                    SetWindowText(hwnd, title);
+                }
+            }
+            catch { }
+        }
+
         private void SyncFpsOverlay()
         {
             if (_scrcpyProcess == null || _scrcpyProcess.HasExited)
             {
+                _liveFpsText = "";
+                _lastAppliedMirrorTitle = "";
                 HideFpsOverlay();
                 return;
             }
@@ -2926,6 +2589,8 @@ namespace ScrcpyLauncher
             {
                 _scrcpyProcess.Refresh();
                 IntPtr targetHwnd = _scrcpyProcess.MainWindowHandle;
+                if (targetHwnd != IntPtr.Zero)
+                    UpdateMirrorWindowTitle(targetHwnd);
                 IntPtr launcherHwnd = new WindowInteropHelper(this).Handle;
 
                 // Track windowed (non-minimized, non-fullscreen) client bounds for Remember Window Pos/Size
@@ -3394,6 +3059,7 @@ namespace ScrcpyLauncher
 
                 QuestEntry entry = res.Item1;
                 _scannedQuests.Add(entry);
+                QuestOcrService.LearnQuestTitle(entry);
                 QuestOcrService.AppendToQuestLog(entry);
                 RefreshQuestPlannerUi();
 
@@ -3425,21 +3091,92 @@ namespace ScrcpyLauncher
             }
         }
 
+        private async Task ScanQuestListBatchAsync()
+        {
+            if (_isQuestScanningNow) return;
+            if (_scrcpyProcess == null || _scrcpyProcess.HasExited)
+            {
+                AppendLog("[퀘스트] 미러링이 실행 중일 때만 목록 일괄 스캔할 수 있습니다.");
+                return;
+            }
+
+            _isQuestScanningNow = true;
+            try
+            {
+                _scrcpyProcess.Refresh();
+                IntPtr hwnd = _scrcpyProcess.MainWindowHandle;
+                int vidW = _activeDisplayWidth > 0 ? _activeDisplayWidth : (_controlClient != null ? _controlClient.ScreenWidth : 0);
+                int vidH = _activeDisplayHeight > 0 ? _activeDisplayHeight : (_controlClient != null ? _controlClient.ScreenHeight : 0);
+
+                var res = await QuestOcrService.ScanQuestListFromWindowAsync(hwnd, vidW, vidH);
+                if (!string.IsNullOrEmpty(res.ErrorMessage))
+                {
+                    AppendLog("[퀘스트 일괄] " + res.ErrorMessage);
+                    return;
+                }
+
+                int addedCnt = QuestOcrService.MergeBatchIntoExisting(_scannedQuests, res.Matched, 10);
+                RefreshQuestPlannerUi();
+
+                string unkPart = (res.UnknownTitles != null && res.UnknownTitles.Count > 0)
+                    ? string.Format(" (미등록 {0}개: 클릭 후 F8 학습)", res.UnknownTitles.Count)
+                    : "";
+                string note = addedCnt > 0
+                    ? string.Format("⚡ 목록 스캔 +{0}개 추가 (총 {1}/10){2}", addedCnt, _scannedQuests.Count, unkPart)
+                    : string.Format("⚡ 새 퀘스트 없음 (총 {0}/10){1}", _scannedQuests.Count, unkPart);
+
+                AppendLog("[퀘스트 일괄] " + note);
+                if (res.UnknownTitles != null && res.UnknownTitles.Count > 0)
+                    AppendLog("[퀘스트 미등록 제목] " + string.Join(", ", res.UnknownTitles.ToArray()));
+
+                if (_keymapOverlay == null)
+                {
+                    _keymapOverlay = new KeymapOverlayWindow();
+                    _keymapOverlay.ProfileEdited += () => RefreshKeyListBox();
+                    _keymapOverlay.SetShowHints(false);
+                }
+                _keymapOverlay.ShowToast(note);
+                if (!_overlayTimer.IsEnabled) _overlayTimer.Start();
+                SyncFpsOverlay();
+            }
+            finally
+            {
+                _isQuestScanningNow = false;
+            }
+        }
+
         private void RefreshQuestPlannerUi()
         {
             if (!_isInitializing)
                 QuestOcrService.SaveActiveQuests(_scannedQuests);
-            _txtQuestCount.Text = string.Format("보유: {0} / 10", _scannedQuests.Count);
+            _txtQuestCount.Text = Loc.F("q_count_fmt", _scannedQuests.Count);
 
             var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests);
-            _txtQuestBanner.Text = QuestOcrService.GetTopRecommendation(plans, _scannedQuests.Count);
+            string topRec = _scannedQuests.Count == 0
+                ? Loc.T("q_empty_banner")
+                : QuestOcrService.GetTopRecommendation(plans, _scannedQuests.Count);
+            _txtQuestBanner.Text = topRec;
+            UpdateHomeQuestSummary(topRec);
+
+            if (_scannedQuests.Count == 0 || plans == null || plans.Count == 0)
+            {
+                _liveQuestRecShort = "";
+            }
+            else
+            {
+                var p0 = plans[0];
+                string shortRec = !string.IsNullOrEmpty(p0.Header) ? p0.Header : topRec;
+                if (shortRec.Length > 42) shortRec = shortRec.Substring(0, 41) + "…";
+                _liveQuestRecShort = shortRec;
+            }
+            UpdateMirrorWindowTitle();
 
             _pnlQuestPlans.Children.Clear();
             if (_scannedQuests.Count == 0)
             {
                 _pnlQuestPlans.Children.Add(new TextBlock
                 {
-                    Text = "아직 수집된 퀘스트가 없습니다. 게임에서 퀘스트를 선택한 뒤 [F8]을 눌러 수집하세요.",
+                    Text = Loc.T("q_empty_list"),
                     FontSize = 12,
                     Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#64748B")),
                     TextWrapping = TextWrapping.Wrap,
@@ -3783,7 +3520,229 @@ namespace ScrcpyLauncher
         {
             if (_txtQuestDaily == null || _settings == null) return;
             EnsureDailyQuestReset();
-            _txtQuestDaily.Text = string.Format("오늘 완료: {0}건", _settings.DailyQuestClearedCount);
+            _txtQuestDaily.Text = Loc.F("q_daily_fmt", _settings.DailyQuestClearedCount);
+            UpdateHomeQuestSummary(null);
+        }
+
+        private void UpdateHomeQuestSummary(string recText)
+        {
+            if (_txtHomeQuestMeta != null && _settings != null)
+                _txtHomeQuestMeta.Text = Loc.F("q_home_meta_fmt", _settings.DailyQuestClearedCount, _scannedQuests.Count);
+            if (_txtHomeQuestRec != null && recText != null)
+                _txtHomeQuestRec.Text = recText;
+        }
+
+        private void SwitchPage(string name)
+        {
+            if (_pageHome == null) return;
+            _pageHome.Visibility = name == "home" ? Visibility.Visible : Visibility.Collapsed;
+            _pageKeymap.Visibility = name == "keymap" ? Visibility.Visible : Visibility.Collapsed;
+            _pageQuest.Visibility = name == "quest" ? Visibility.Visible : Visibility.Collapsed;
+            _pageCodex.Visibility = name == "codex" ? Visibility.Visible : Visibility.Collapsed;
+            _pageAdvanced.Visibility = name == "advanced" ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void ApplyVisualPreset(string presetId)
+        {
+            bool prev = _isInitializing;
+            _isInitializing = true;
+            try
+            {
+                if (presetId == "1080p")
+                {
+                    SelectComboByTag(_cmbCodec, "h264", 0);
+                    _txtBitrate.Text = "20";
+                    _chkVirtualDisplay.IsChecked = true;
+                    _cmbVdSpec.Text = "1920x1080/280";
+                    _chkNoVdDecorations.IsChecked = true;
+                    _chkLowLatency.IsChecked = false;
+                    _chkAudioSafe.IsChecked = false;
+                }
+                else if (presetId == "1440p")
+                {
+                    SelectComboByTag(_cmbCodec, "h265", 1);
+                    _txtBitrate.Text = "20";
+                    _chkVirtualDisplay.IsChecked = true;
+                    _cmbVdSpec.Text = "2560x1440/373";
+                    _chkNoVdDecorations.IsChecked = true;
+                    _chkLowLatency.IsChecked = false;
+                    _chkAudioSafe.IsChecked = false;
+                }
+                else if (presetId == "native")
+                {
+                    SelectComboByTag(_cmbCodec, "h264", 0);
+                    _txtBitrate.Text = "20";
+                    _chkVirtualDisplay.IsChecked = false;
+                    _chkLowLatency.IsChecked = false;
+                    _chkAudioSafe.IsChecked = false;
+                }
+                else if (presetId == "wifi")
+                {
+                    SelectComboByTag(_cmbCodec, "h265", 1);
+                    _txtBitrate.Text = "12";
+                    _chkLowLatency.IsChecked = false;
+                    _chkAudioSafe.IsChecked = true;
+                }
+                if (_settings != null) _settings.SelectedVisualPreset = presetId;
+            }
+            finally
+            {
+                _isInitializing = prev;
+            }
+            HighlightActiveVisualPreset();
+            UpdateUiStates();
+            UpdateCommandPreview();
+            SaveSettingsFromUi();
+            AppendLog("[프리셋] 화면 프리셋 적용됨: " + presetId);
+        }
+
+        private void HighlightActiveVisualPreset()
+        {
+            if (_btnPreset1080 == null) return;
+            string cur = _settings != null ? (_settings.SelectedVisualPreset ?? "1080p") : "1080p";
+            var map = new Tuple<string, Button>[]
+            {
+                Tuple.Create("1080p", _btnPreset1080),
+                Tuple.Create("1440p", _btnPreset1440),
+                Tuple.Create("native", _btnPresetNative),
+                Tuple.Create("wifi", _btnPresetWifi)
+            };
+            var activeBg = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2C5E3F"));
+            var activeFg = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFDF8"));
+            var activeBd = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#B8832A"));
+            var idleBg = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFDF8"));
+            var idleFg = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2D2A24"));
+            var idleBd = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D4C9B4"));
+
+            foreach (var pair in map)
+            {
+                bool active = pair.Item1 == cur;
+                pair.Item2.Background = active ? activeBg : idleBg;
+                pair.Item2.Foreground = active ? activeFg : idleFg;
+                pair.Item2.BorderBrush = active ? activeBd : idleBd;
+            }
+        }
+
+        private void RefreshMonsterCodexUi()
+        {
+            if (_pnlCodexList == null) return;
+            _pnlCodexList.Children.Clear();
+
+            string query = _txtCodexSearch != null ? (_txtCodexSearch.Text ?? "").Trim() : "";
+            string selRegion = _cmbCodexRegion != null ? GetSelectedTag(_cmbCodexRegion, "") : "";
+            string selSpecies = _cmbCodexSpecies != null ? GetSelectedTag(_cmbCodexSpecies, "") : "";
+
+            int shown = 0;
+            for (int i = 0; i < QuestOcrService.MonsterCatalog.Length; i++)
+            {
+                var m = QuestOcrService.MonsterCatalog[i];
+                if (!string.IsNullOrEmpty(query) &&
+                    m.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0 &&
+                    m.Species.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                if (!string.IsNullOrEmpty(selRegion))
+                {
+                    bool hasReg = false;
+                    for (int r = 0; r < m.Regions.Length; r++)
+                        if (m.Regions[r] == selRegion) { hasReg = true; break; }
+                    if (!hasReg) continue;
+                }
+
+                if (!string.IsNullOrEmpty(selSpecies))
+                {
+                    if (selSpecies == "융광종") { if (!m.IsRadiant) continue; }
+                    else if (m.Species != selSpecies) continue;
+                }
+
+                shown++;
+                var rowCard = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(m.IsRadiant ? "#FDF6E7" : "#FFFFFF")),
+                    BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(m.IsRadiant ? "#E6C98B" : "#E5DEC9")),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(12, 8, 12, 8),
+                    Margin = new Thickness(0, 0, 0, 6)
+                };
+
+                var g = new Grid();
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(195) });
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
+                g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                var tbName = new TextBlock
+                {
+                    Text = m.Name,
+                    FontSize = 12.5,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(m.IsRadiant ? "#8C5E14" : "#1F2922")),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(tbName, 0);
+                g.Children.Add(tbName);
+
+                var spBadge = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E6EFE9")),
+                    CornerRadius = new CornerRadius(5),
+                    Padding = new Thickness(6, 2, 6, 2),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Child = new TextBlock
+                    {
+                        Text = m.Species,
+                        FontSize = 11,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E462E"))
+                    }
+                };
+                Grid.SetColumn(spBadge, 1);
+                g.Children.Add(spBadge);
+
+                var regWrap = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+                if (m.Regions == null || m.Regions.Length == 0)
+                {
+                    regWrap.Children.Add(new TextBlock { Text = "특수 / 이벤트 전용", FontSize = 11, Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#8F8677")) });
+                }
+                else
+                {
+                    for (int r = 0; r < m.Regions.Length; r++)
+                    {
+                        regWrap.Children.Add(new Border
+                        {
+                            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F5F1E8")),
+                            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDD4C3")),
+                            BorderThickness = new Thickness(1),
+                            CornerRadius = new CornerRadius(5),
+                            Padding = new Thickness(7, 1.5, 7, 1.5),
+                            Margin = new Thickness(0, 0, 5, 0),
+                            Child = new TextBlock
+                            {
+                                Text = m.Regions[r],
+                                FontSize = 11,
+                                Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4A443A"))
+                            }
+                        });
+                    }
+                }
+                Grid.SetColumn(regWrap, 2);
+                g.Children.Add(regWrap);
+
+                rowCard.Child = g;
+                _pnlCodexList.Children.Add(rowCard);
+            }
+
+            if (shown == 0)
+            {
+                _pnlCodexList.Children.Add(new TextBlock
+                {
+                    Text = "조건에 일치하는 몬스터가 없습니다.",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#8F8677")),
+                    Margin = new Thickness(6, 12, 6, 12)
+                });
+            }
         }
 
         private static bool TryCopyPngToClipboard(string pngPath)
@@ -3906,6 +3865,12 @@ namespace ScrcpyLauncher
             _chkVirtualDisplay.IsChecked = _settings.UseVirtualDisplay;
             _cmbVdSpec.Text = string.IsNullOrWhiteSpace(_settings.VirtualDisplaySpec) ? "1920x1080/280" : _settings.VirtualDisplaySpec;
             _chkNoVdDecorations.IsChecked = _settings.NoVdSystemDecorations;
+            if (_txtExtraArgs != null)
+            {
+                _txtExtraArgs.Text = _settings.ExtraScrcpyArgs ?? "";
+                if (_txtExtraArgsHint != null)
+                    _txtExtraArgsHint.Visibility = string.IsNullOrEmpty(_txtExtraArgs.Text) ? Visibility.Visible : Visibility.Collapsed;
+            }
 
             double ho = _settings.OverlayOpacity >= 0.25 && _settings.OverlayOpacity <= 1.0 ? _settings.OverlayOpacity : 1.0;
             double hs = _settings.OverlayScale >= 0.7 && _settings.OverlayScale <= 1.5 ? _settings.OverlayScale : 1.0;
@@ -3954,6 +3919,7 @@ namespace ScrcpyLauncher
             _settings.UseVirtualDisplay = _chkVirtualDisplay.IsChecked == true;
             _settings.VirtualDisplaySpec = _cmbVdSpec.Text.Trim();
             _settings.NoVdSystemDecorations = _chkNoVdDecorations.IsChecked == true;
+            if (_txtExtraArgs != null) _settings.ExtraScrcpyArgs = (_txtExtraArgs.Text ?? "").Trim();
             _settings.OverlayOpacity = Math.Round(_sldHintOpacity.Value, 2);
             _settings.OverlayScale = Math.Round(_sldHintScale.Value, 2);
 

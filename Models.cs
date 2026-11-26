@@ -107,6 +107,8 @@ namespace ScrcpyLauncher
         public int LastWinY { get; set; }
         public int LastWinW { get; set; }
         public int LastWinH { get; set; }
+        public string ExtraScrcpyArgs { get; set; }
+        public string SelectedVisualPreset { get; set; }
 
         public LauncherSettings()
         {
@@ -146,6 +148,8 @@ namespace ScrcpyLauncher
             LastWinY = -32000;
             LastWinW = 0;
             LastWinH = 0;
+            ExtraScrcpyArgs = "";
+            SelectedVisualPreset = "1080p";
         }
 
         public static string GetSettingsPath()

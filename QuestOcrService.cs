@@ -119,7 +119,7 @@ namespace ScrcpyLauncher
             "푸케푸케", "볼보로스", "안쟈나프", "치치야크", "오도가론"
         };
 
-        private class MonsterDef
+        public class MonsterDef
         {
             public string Name;
             public string Species;
@@ -128,7 +128,7 @@ namespace ScrcpyLauncher
         }
 
         // Cross-verified across Game8, Gamerch, GameWith, and MHOBuilds
-        private static readonly MonsterDef[] MonsterCatalog = new[]
+        public static readonly MonsterDef[] MonsterCatalog = new[]
         {
             // 아룡종
             new MonsterDef { Name = "도스쟈그라스", Species = "아룡종", IsRadiant = false, Regions = new[] { "거목의 벌판", "찬란한 군도" } },
@@ -998,6 +998,485 @@ namespace ScrcpyLauncher
                 return true;
 
             return false;
+        }
+
+        public class QuestTitleTemplate
+        {
+            public string Title { get; set; }
+            public string Region { get; set; }
+            public bool IsNest { get; set; }
+            public bool IsAnyField { get; set; }
+            public string Species { get; set; }
+            public string TargetMonster { get; set; }
+            public string ActionType { get; set; }
+            public string WeaponType { get; set; }
+            public string ObjectiveText { get; set; }
+        }
+
+        public class BatchScanResult
+        {
+            public List<QuestEntry> Matched { get; set; }
+            public List<string> UnknownTitles { get; set; }
+            public string ErrorMessage { get; set; }
+        }
+
+        private static readonly QuestTitleTemplate[] BuiltInTitleTemplates = new[]
+        {
+            // Field — Capture
+            new QuestTitleTemplate { Title = "아마추어 조사대의 한계", Region = "찬란한 군도", Species = "아룡종", ActionType = "포획", ObjectiveText = "찬란한 군도에서 아룡종 포획" },
+            new QuestTitleTemplate { Title = "신비의 묘약", Region = "열사 평원", Species = "수룡종", ActionType = "포획", ObjectiveText = "열사 평원에서 수룡종 포획" },
+            new QuestTitleTemplate { Title = "수수께끼의 식재료", Region = "거목의 벌판", Species = "수룡종", ActionType = "포획", ObjectiveText = "거목의 벌판에서 수룡종 포획" },
+            new QuestTitleTemplate { Title = "혼신의 한 권", Region = "열사 평원", Species = "조룡종", ActionType = "포획", ObjectiveText = "열사 평원에서 조룡종 포획" },
+            new QuestTitleTemplate { Title = "하늘을 나는 새와 숨겨진 보물", Region = "거목의 벌판", Species = "조룡종", ActionType = "포획", ObjectiveText = "거목의 벌판에서 조룡종 포획" },
+            new QuestTitleTemplate { Title = "군도 맹수 연구", Region = "찬란한 군도", Species = "수룡종", ActionType = "포획", ObjectiveText = "찬란한 군도에서 수룡종 포획" },
+            new QuestTitleTemplate { Title = "검술의 극치를 찾아서", Region = "부패의 심연", Species = "아룡종", ActionType = "포획", ObjectiveText = "부패의 심연에서 아룡종 포획" },
+            new QuestTitleTemplate { Title = "몬스터 이사 대작전", Region = "거목의 벌판", Species = "비룡종", ActionType = "포획", ObjectiveText = "거목의 벌판에서 비룡종 포획" },
+            new QuestTitleTemplate { Title = "사막 비룡의 이동 경로 추적", Region = "열사 평원", Species = "비룡종", ActionType = "포획", ObjectiveText = "열사 평원에서 비룡종 포획" },
+            new QuestTitleTemplate { Title = "신비로운 부패의 심연", Region = "부패의 심연", Species = "수룡종", ActionType = "포획", ObjectiveText = "부패의 심연에서 수룡종 포획" },
+
+            // Field — Hunt / Radiant
+            new QuestTitleTemplate { Title = "심연 밑바닥의 강렬한 빛", Region = "부패의 심연", Species = "융광종", ActionType = "사냥", ObjectiveText = "부패의 심연에서 융광종 사냥" },
+            new QuestTitleTemplate { Title = "좀 더 가까운 곳에서", Region = "열사 평원", Species = "융광종", ActionType = "사냥", ObjectiveText = "열사 평원에서 융광종 사냥" },
+            new QuestTitleTemplate { Title = "요리사의 분노", Region = "찬란한 군도", Species = "융광종", ActionType = "사냥", ObjectiveText = "찬란한 군도에서 융광종 사냥" },
+            new QuestTitleTemplate { Title = "새 대량 발생", Region = "거목의 벌판", Species = "조룡종", ActionType = "사냥", ObjectiveText = "거목의 벌판에서 조룡종 사냥" },
+            new QuestTitleTemplate { Title = "골짜기 바닥의 진동", Region = "부패의 심연", Species = "수룡종", ActionType = "사냥", ObjectiveText = "부패의 심연에서 수룡종 사냥" },
+            new QuestTitleTemplate { Title = "또다시 빈손으로 귀환", Region = "열사 평원", Species = "어룡종", ActionType = "사냥", ObjectiveText = "열사 평원에서 어룡종 사냥" },
+            new QuestTitleTemplate { Title = "무모한 사막의 거수", Region = "열사 평원", Species = "수룡종", ActionType = "사냥", ObjectiveText = "열사 평원에서 수룡종 사냥" },
+            new QuestTitleTemplate { Title = "비룡의 날치기 배송", Region = "열사 평원", Species = "비룡종", ActionType = "사냥", ObjectiveText = "열사 평원에서 비룡종 사냥" },
+
+            // Any-Field — Weapon Condition
+            new QuestTitleTemplate { Title = "일정 대지연", Region = "필드 (지역 무관)", IsAnyField = true, Species = "비룡종", ActionType = "사냥", WeaponType = "원거리", ObjectiveText = "필드에서 원거리 무기를 사용해 비룡종 사냥" },
+            new QuestTitleTemplate { Title = "낚시 성과 위장 대작전", Region = "필드 (지역 무관)", IsAnyField = true, Species = "어룡종", ActionType = "사냥", WeaponType = "원거리", ObjectiveText = "필드에서 원거리 무기를 사용해 어룡종 사냥" },
+            new QuestTitleTemplate { Title = "칼날에 의한 징벌", Region = "필드 (지역 무관)", IsAnyField = true, Species = "조룡종", ActionType = "사냥", WeaponType = "근거리", ObjectiveText = "필드에서 근접 무기를 사용해 조룡종 사냥" },
+            new QuestTitleTemplate { Title = "신선도를 유지하기 위한 시도", Region = "필드 (지역 무관)", IsAnyField = true, Species = "아룡종", ActionType = "사냥", WeaponType = "원거리", ObjectiveText = "필드에서 원거리 무기를 사용해 아룡종 사냥" },
+            new QuestTitleTemplate { Title = "궁극의 맛을 찾아서", Region = "필드 (지역 무관)", IsAnyField = true, Species = "어룡종", ActionType = "사냥", WeaponType = "근거리", ObjectiveText = "필드에서 근접 무기를 사용해 어룡종 사냥" },
+            new QuestTitleTemplate { Title = "외출 시 호신술", Region = "필드 (지역 무관)", IsAnyField = true, Species = "융광종", ActionType = "사냥", WeaponType = "원거리", ObjectiveText = "필드에서 원거리 무기를 사용해 융광종 사냥" },
+
+            // Nest (Instance)
+            new QuestTitleTemplate { Title = "태양보다 눈부신 녀석", Region = "둥지", IsNest = true, TargetMonster = "치치야크", ActionType = "사냥", ObjectiveText = "둥지에서 치치야크 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "여왕은 오직 하나", Region = "둥지", IsNest = true, TargetMonster = "리오레이아", ActionType = "사냥", ObjectiveText = "둥지에서 리오레이아 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "전율의 스파이스", Region = "둥지", IsNest = true, TargetMonster = "도스기르오스", ActionType = "사냥", ObjectiveText = "둥지에서 도스기르오스 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "글라이딩의 신비", Region = "둥지", IsNest = true, TargetMonster = "토비카가치", ActionType = "포획", ObjectiveText = "둥지에서 토비카가치 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "비밀 의뢰", Region = "둥지", IsNest = true, TargetMonster = "푸케푸케", ActionType = "포획", ObjectiveText = "둥지에서 푸케푸케 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "좋아하는 데 이유는 없다", Region = "둥지", IsNest = true, Species = "융광종", TargetMonster = "융광종 치치야크", ActionType = "사냥", ObjectiveText = "둥지에서 융광종 치치야크 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "쿨한 결단", Region = "둥지", IsNest = true, TargetMonster = "디아블로스", ActionType = "사냥", ObjectiveText = "둥지에서 디아블로스 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "분노의 심판", Region = "둥지", IsNest = true, TargetMonster = "안쟈나프", ActionType = "사냥", ObjectiveText = "둥지에서 안쟈나프 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "늦잠을 방해하는 자", Region = "둥지", IsNest = true, TargetMonster = "볼보로스", ActionType = "사냥", ObjectiveText = "둥지에서 볼보로스 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "꽃놀이하기 딱 좋은 날", Region = "둥지", IsNest = true, TargetMonster = "리오레이아 아종", ActionType = "포획", ObjectiveText = "둥지에서 리오레이아 아종 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "진흙 냄새가 바로 소울!", Region = "둥지", IsNest = true, TargetMonster = "쥬라토도스", ActionType = "사냥", ObjectiveText = "둥지에서 쥬라토도스 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "뜻밖의 만남", Region = "둥지", IsNest = true, Species = "융광종", TargetMonster = "융광종 오도가론", ActionType = "사냥", ObjectiveText = "둥지에서 융광종 오도가론 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "골짜기 밑에 잠들라", Region = "둥지", IsNest = true, TargetMonster = "라도발킨", ActionType = "포획", ObjectiveText = "둥지에서 라도발킨 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "'전승'의 첫 실전", Region = "둥지", IsNest = true, TargetMonster = "안쟈나프", ActionType = "포획", ObjectiveText = "둥지에서 안쟈나프 포획(난이도V)" },
+            new QuestTitleTemplate { Title = "안전한 글라이딩", Region = "둥지", IsNest = true, TargetMonster = "리오레우스", ActionType = "사냥", ObjectiveText = "둥지에서 리오레우스 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "가출한 아내의 행방", Region = "둥지", IsNest = true, Species = "융광종", TargetMonster = "융광종 리오레이아", ActionType = "사냥", ObjectiveText = "둥지에서 융광종 리오레이아 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "최고의 별미는 꼬리에 있다", Region = "둥지", IsNest = true, Species = "융광종", TargetMonster = "융광종 볼보로스", ActionType = "사냥", ObjectiveText = "둥지에서 융광종 볼보로스 사냥(난이도V)" },
+            new QuestTitleTemplate { Title = "설욕의 낚시", Region = "둥지", IsNest = true, TargetMonster = "쥬라토도스", ActionType = "포획", ObjectiveText = "둥지에서 쥬라토도스 포획(난이도V)" }
+        };
+
+        private static List<QuestTitleTemplate> _learnedTitleCache = null;
+
+        public static string GetTitleDbPath()
+        {
+            string dir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            if (string.IsNullOrEmpty(dir)) dir = AppDomain.CurrentDomain.BaseDirectory;
+            return Path.Combine(dir, "quest_title_db.json");
+        }
+
+        private static List<QuestTitleTemplate> GetAllTitleTemplates()
+        {
+            if (_learnedTitleCache == null)
+            {
+                _learnedTitleCache = new List<QuestTitleTemplate>();
+                try
+                {
+                    string path = GetTitleDbPath();
+                    if (File.Exists(path))
+                    {
+                        string json = File.ReadAllText(path, System.Text.Encoding.UTF8);
+                        var ser = new System.Web.Script.Serialization.JavaScriptSerializer();
+                        var loaded = ser.Deserialize<List<QuestTitleTemplate>>(json);
+                        if (loaded != null) _learnedTitleCache = loaded;
+                    }
+                }
+                catch { }
+            }
+            var all = new List<QuestTitleTemplate>(BuiltInTitleTemplates);
+            all.AddRange(_learnedTitleCache);
+            return all;
+        }
+
+        private static string NormalizeTitleKey(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return Regex.Replace(s, @"[\s\p{P}\p{S}]", "").Trim();
+        }
+
+        public static void LearnQuestTitle(QuestEntry entry)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.Title) || string.IsNullOrWhiteSpace(entry.ObjectiveText))
+                return;
+            string norm = NormalizeTitleKey(entry.Title);
+            if (norm.Length < 3 || norm == NormalizeTitleKey(entry.ObjectiveText))
+                return;
+            if (entry.Region == "기타/미분류")
+                return;
+
+            var all = GetAllTitleTemplates();
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (NormalizeTitleKey(all[i].Title) == norm)
+                    return; // Already known
+            }
+
+            var tpl = new QuestTitleTemplate
+            {
+                Title = entry.Title.Trim(),
+                Region = entry.Region ?? "",
+                IsNest = entry.IsNest,
+                IsAnyField = entry.IsAnyField,
+                Species = entry.Species ?? "",
+                TargetMonster = entry.TargetMonster ?? "",
+                ActionType = entry.ActionType ?? "기타",
+                WeaponType = entry.WeaponType ?? "",
+                ObjectiveText = entry.ObjectiveText ?? ""
+            };
+            _learnedTitleCache.Add(tpl);
+            try
+            {
+                var ser = new System.Web.Script.Serialization.JavaScriptSerializer();
+                File.WriteAllText(GetTitleDbPath(), ser.Serialize(_learnedTitleCache), System.Text.Encoding.UTF8);
+            }
+            catch { }
+        }
+
+        public static QuestTitleTemplate MatchTitleTemplate(string ocrLine)
+        {
+            string norm = NormalizeTitleKey(ocrLine);
+            if (norm.Length < 3) return null;
+
+            var all = GetAllTitleTemplates();
+            QuestTitleTemplate best = null;
+            int bestDist = int.MaxValue;
+
+            for (int i = 0; i < all.Count; i++)
+            {
+                string target = NormalizeTitleKey(all[i].Title);
+                if (string.IsNullOrEmpty(target)) continue;
+                if (norm == target) return all[i];
+
+                int maxAllowed = target.Length >= 8 ? 2 : (target.Length >= 5 ? 1 : 0);
+                if (Math.Abs(norm.Length - target.Length) > maxAllowed) continue;
+
+                int d = Levenshtein(norm, target);
+                if (d <= maxAllowed && d < bestDist)
+                {
+                    bestDist = d;
+                    best = all[i];
+                }
+            }
+            return best;
+        }
+
+        public static Bitmap CropQuestListFromBitmap(Bitmap full, int videoW, int videoH)
+        {
+            if (full == null) return null;
+            int cw = full.Width;
+            int ch = full.Height;
+            if (cw < 200 || ch < 120) return null;
+
+            double vx = 0, vy = 0, vw = cw, vh = ch;
+            if (videoW > 0 && videoH > 0)
+            {
+                double winAspect = (double)cw / ch;
+                double vidAspect = (double)videoW / videoH;
+                if (winAspect > vidAspect + 0.002) { vh = ch; vw = ch * vidAspect; vx = (cw - vw) / 2.0; }
+                else if (winAspect < vidAspect - 0.002) { vw = cw; vh = cw / vidAspect; vy = (ch - vh) / 2.0; }
+            }
+
+            // Left quest list column (titles only: x: 24.0%..42.5%, y: 8.5%..96.0%)
+            // Starts at y=8.5% so scrolled-down lists do not clip the topmost quest!
+            int rx = Math.Max(0, (int)Math.Round(vx + vw * 0.240));
+            int ry = Math.Max(0, (int)Math.Round(vy + vh * 0.085));
+            int rw = Math.Min(cw - rx, (int)Math.Round(vw * 0.185));
+            int rh = Math.Min(ch - ry, (int)Math.Round(vh * 0.875));
+            if (rw < 60 || rh < 80) return null;
+
+            var scaled = new Bitmap(rw * 2, rh * 2, PixelFormat.Format32bppArgb);
+            using (var sg = Graphics.FromImage(scaled))
+            {
+                sg.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                sg.DrawImage(full, new Rectangle(0, 0, scaled.Width, scaled.Height), new Rectangle(rx, ry, rw, rh), GraphicsUnit.Pixel);
+            }
+            EnhanceParchmentContrast(scaled);
+            return scaled;
+        }
+
+        public static async Task<BatchScanResult> ScanQuestListFromBitmapAsync(Bitmap full, int videoW, int videoH)
+        {
+            var result = new BatchScanResult { Matched = new List<QuestEntry>(), UnknownTitles = new List<string>(), ErrorMessage = "" };
+            Bitmap listBmp = null;
+            try
+            {
+                listBmp = CropQuestListFromBitmap(full, videoW, videoH);
+                if (listBmp == null)
+                {
+                    result.ErrorMessage = "왼쪽 퀘스트 목록 영역 캡처에 실패했습니다.";
+                    return result;
+                }
+
+                string[] lines = await RunWinRtOcrAsync(listBmp);
+                if (lines == null || lines.Length == 0)
+                {
+                    result.ErrorMessage = "왼쪽 퀘스트 목록 텍스트를 인식하지 못했습니다.";
+                    return result;
+                }
+
+                var candidateLines = new List<string>();
+                foreach (var raw in lines)
+                {
+                    string clean = CleanLeadingBullet(raw);
+                    if (clean.EndsWith("시즌")) clean = clean.Substring(0, clean.Length - 2).Trim();
+                    string norm = NormalizeTitleKey(clean);
+                    if (norm.Length < 3) continue;
+                    // Skip section/badge text & clipped "시즌" OCR noise (e.g. "『국l즌")
+                    if (norm == "시즌" || norm == "긴급" || norm == "스토리" || norm == "진행중" || norm == "의뢰" ||
+                        norm.Equals("new", StringComparison.OrdinalIgnoreCase)) continue;
+                    string hangulOnly = Regex.Replace(clean, "[^가-힣]", "");
+                    if (hangulOnly.Length < 2) continue;
+                    if (hangulOnly.Length <= 3 && (hangulOnly.Contains("시즌") || Levenshtein(hangulOnly, "시즌") <= 1 || hangulOnly.EndsWith("즌"))) continue;
+                    candidateLines.Add(clean);
+                }
+
+                // First pass: check if any candidate is unknown; if so, auto-learn the currently selected quest from the right pane!
+                bool hasUnknown = false;
+                for (int i = 0; i < candidateLines.Count; i++)
+                {
+                    if (MatchTitleTemplate(candidateLines[i]) == null) { hasUnknown = true; break; }
+                }
+                if (hasUnknown)
+                {
+                    await TryAutoLearnSelectedRightPaneAsync(full, videoW, videoH);
+                }
+
+                foreach (var clean in candidateLines)
+                {
+                    var tpl = MatchTitleTemplate(clean);
+                    if (tpl != null)
+                    {
+                        result.Matched.Add(new QuestEntry
+                        {
+                            Id = Guid.NewGuid().ToString("N").Substring(0, 8),
+                            Title = tpl.Title,
+                            Category = "",
+                            Region = tpl.Region ?? "",
+                            IsNest = tpl.IsNest,
+                            IsAnyField = tpl.IsAnyField,
+                            Species = tpl.Species ?? "",
+                            TargetMonster = tpl.TargetMonster ?? "",
+                            ActionType = tpl.ActionType ?? "기타",
+                            WeaponType = tpl.WeaponType ?? "",
+                            ObjectiveText = tpl.ObjectiveText ?? tpl.Title,
+                            Progress = "",
+                            RawFingerprint = (tpl.Title + "|" + tpl.Region + "|" + tpl.ObjectiveText).ToLowerInvariant()
+                        });
+                    }
+                    else
+                    {
+                        result.UnknownTitles.Add(clean);
+                    }
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                result.ErrorMessage = "목록 OCR 오류: " + ex.Message;
+                return result;
+            }
+            finally
+            {
+                if (listBmp != null) listBmp.Dispose();
+            }
+        }
+
+        public static async Task<BatchScanResult> ScanQuestListFromWindowAsync(IntPtr targetHwnd, int videoW, int videoH)
+        {
+            if (targetHwnd == IntPtr.Zero || IsIconic(targetHwnd))
+                return new BatchScanResult { Matched = new List<QuestEntry>(), UnknownTitles = new List<string>(), ErrorMessage = "미러링 창이 열려 있지 않습니다." };
+
+            RECT rc;
+            if (!GetClientRect(targetHwnd, out rc))
+                return new BatchScanResult { Matched = new List<QuestEntry>(), UnknownTitles = new List<string>(), ErrorMessage = "창 크기 조회 실패" };
+            int cw = rc.Right - rc.Left;
+            int ch = rc.Bottom - rc.Top;
+            if (cw < 200 || ch < 120)
+                return new BatchScanResult { Matched = new List<QuestEntry>(), UnknownTitles = new List<string>(), ErrorMessage = "창이 너무 작습니다." };
+
+            using (var full = new Bitmap(cw, ch, PixelFormat.Format32bppArgb))
+            {
+                using (var g = Graphics.FromImage(full))
+                {
+                    IntPtr hdc = g.GetHdc();
+                    try { PrintWindow(targetHwnd, hdc, 3); }
+                    finally { g.ReleaseHdc(hdc); }
+                }
+                return await ScanQuestListFromBitmapAsync(full, videoW, videoH);
+            }
+        }
+
+        private static async Task TryAutoLearnSelectedRightPaneAsync(Bitmap full, int videoW, int videoH)
+        {
+            Bitmap bodyBmp = null;
+            Bitmap titleBmp = null;
+            try
+            {
+                var crops = CropQuestRegionsFromBitmap(full, videoW, videoH);
+                if (crops == null || crops.Item1 == null) return;
+                bodyBmp = crops.Item1;
+                titleBmp = crops.Item2;
+
+                string[] bodyLines = await RunWinRtOcrAsync(bodyBmp);
+                if (bodyLines == null || bodyLines.Length == 0) return;
+
+                string extractedTitle = "";
+                if (titleBmp != null)
+                {
+                    string[] titleLines = await RunWinRtOcrAsync(titleBmp);
+                    if (titleLines != null && titleLines.Length > 0)
+                        extractedTitle = CleanLeadingBullet(string.Join(" ", titleLines)).Trim();
+                }
+
+                var entry = ParseQuestLines(bodyLines, extractedTitle);
+                if (entry != null)
+                    LearnQuestTitle(entry);
+            }
+            catch { }
+            finally
+            {
+                if (bodyBmp != null) bodyBmp.Dispose();
+                if (titleBmp != null) titleBmp.Dispose();
+            }
+        }
+
+        // LCS (Longest Common Subsequence) in-place sequence merge:
+        // - Handles top, middle, and bottom new quest insertions seamlessly!
+        // - Removes scroll overlap across any scroll offset (7+8 -> 10, etc.)!
+        // - Preserves genuine duplicate quests held simultaneously!
+        // - Safe against accidental double F7 presses (0 added)!
+        public static int MergeBatchIntoExisting(List<QuestEntry> existing, List<QuestEntry> batch, int maxTotal)
+        {
+            if (existing == null || batch == null || batch.Count == 0) return 0;
+            if (existing.Count == 0)
+            {
+                int added0 = 0;
+                for (int i = 0; i < batch.Count && existing.Count < maxTotal; i++)
+                {
+                    existing.Add(batch[i]);
+                    added0++;
+                }
+                return added0;
+            }
+
+            int m = existing.Count;
+            int n = batch.Count;
+            string[] ek = new string[m];
+            string[] bk = new string[n];
+            for (int i = 0; i < m; i++) ek[i] = NormalizeTitleKey(existing[i].Title);
+            for (int j = 0; j < n; j++) bk[j] = NormalizeTitleKey(batch[j].Title);
+
+            int[,] dp = new int[m + 1, n + 1];
+            for (int i = m - 1; i >= 0; i--)
+            {
+                for (int j = n - 1; j >= 0; j--)
+                {
+                    if (ek[i] == bk[j])
+                        dp[i, j] = dp[i + 1, j + 1] + 1;
+                    else
+                        dp[i, j] = dp[i + 1, j] >= dp[i, j + 1] ? dp[i + 1, j] : dp[i, j + 1];
+                }
+            }
+
+            // Reconstruct matched index pairs (ei, bi) in ascending order
+            var matchedPairs = new List<Tuple<int, int>>();
+            int ci = 0, cj = 0;
+            while (ci < m && cj < n)
+            {
+                if (ek[ci] == bk[cj])
+                {
+                    matchedPairs.Add(Tuple.Create(ci, cj));
+                    ci++;
+                    cj++;
+                }
+                else if (dp[ci + 1, cj] >= dp[ci, cj + 1])
+                {
+                    ci++;
+                }
+                else
+                {
+                    cj++;
+                }
+            }
+
+            // Build merged list inserting unmatched batch items at their exact relative positions
+            var merged = new List<QuestEntry>();
+            int prevE = 0, prevB = 0;
+            int addedCount = 0;
+            int remainingCap = Math.Max(0, maxTotal - existing.Count);
+
+            for (int p = 0; p < matchedPairs.Count; p++)
+            {
+                int matchE = matchedPairs[p].Item1;
+                int matchB = matchedPairs[p].Item2;
+
+                // Existing items before this anchor
+                for (int e = prevE; e < matchE; e++)
+                    merged.Add(existing[e]);
+
+                // New batch items that appeared right before this anchor (top or middle insertion!)
+                for (int b = prevB; b < matchB; b++)
+                {
+                    if (remainingCap > 0)
+                    {
+                        merged.Add(batch[b]);
+                        addedCount++;
+                        remainingCap--;
+                    }
+                }
+
+                // The anchor itself (keep existing entry)
+                merged.Add(existing[matchE]);
+                prevE = matchE + 1;
+                prevB = matchB + 1;
+            }
+
+            // Trailing existing items after last anchor
+            for (int e = prevE; e < m; e++)
+                merged.Add(existing[e]);
+
+            // Trailing new batch items after last anchor (bottom scroll insertion!)
+            for (int b = prevB; b < n; b++)
+            {
+                if (remainingCap > 0)
+                {
+                    merged.Add(batch[b]);
+                    addedCount++;
+                    remainingCap--;
+                }
+            }
+
+            existing.Clear();
+            existing.AddRange(merged);
+            return addedCount;
+        }
+
+        public static List<QuestEntry> MergeBatchScannedQuests(List<QuestEntry> existing, List<QuestEntry> batch)
+        {
+            var copy = existing != null ? new List<QuestEntry>(existing) : new List<QuestEntry>();
+            int before = copy.Count;
+            MergeBatchIntoExisting(copy, batch, 100);
+            var added = new List<QuestEntry>();
+            // Legacy compatibility wrapper
+            for (int i = before; i < copy.Count; i++) added.Add(copy[i]);
+            return added;
         }
 
         public static string GetActiveQuestsPath()
