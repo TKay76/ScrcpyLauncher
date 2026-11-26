@@ -447,11 +447,12 @@ namespace ScrcpyLauncher
           </UniformGrid>
           <TextBlock x:Name='txtModeSummary' Text='' FontSize='11.5' Foreground='#2C5E3F' FontWeight='SemiBold' Margin='4,0,0,12'/>
 
-          <!-- One-Click Visual Presets (4 Pills) -->
+          <!-- One-Click Visual Presets (5 Pills) -->
           <TextBlock x:Name='lblPresetsTitle' Text='화면 · 성능 원클릭 프리셋' FontSize='12' FontWeight='Bold' Foreground='#5C5548' Margin='4,0,0,6'/>
           <WrapPanel Margin='0,0,0,12'>
             <Button x:Name='btnPreset1080' Content='추천 1080p' Style='{StaticResource PresetPill}'/>
             <Button x:Name='btnPreset1440' Content='고화질 1440p' Style='{StaticResource PresetPill}'/>
+            <Button x:Name='btnPresetMonitor' Content='내 모니터 맞춤' Style='{StaticResource PresetPill}'/>
             <Button x:Name='btnPresetNative' Content='기기 본체 화면' Style='{StaticResource PresetPill}'/>
             <Button x:Name='btnPresetWifi' Content='무선 안정' Style='{StaticResource PresetPill}'/>
           </WrapPanel>
@@ -483,6 +484,7 @@ namespace ScrcpyLauncher
                 <CheckBox x:Name='chkAlwaysOnTop' Content='항상 위에 (실시간)'/>
                 <CheckBox x:Name='chkRememberWin' Content='창 위치·크기 기억'/>
                 <CheckBox x:Name='chkAudioSafe' Content='오디오 안정화'/>
+                <CheckBox x:Name='chkAutoMuteBg' Content='다른 창 이동 시 음소거'/>
               </WrapPanel>
             </StackPanel>
           </Border>
@@ -663,10 +665,13 @@ namespace ScrcpyLauncher
               <RowDefinition Height='Auto'/>
               <RowDefinition Height='*'/>
             </Grid.RowDefinitions>
-            <StackPanel Grid.Row='0' Orientation='Horizontal' Margin='0,0,0,8'>
-              <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
-              <TextBlock x:Name='lblQuestSec2' Text='동시 클리어 추천 조합 (클리어한 조합의 [✓ 완료]를 눌러 비우세요)' Style='{StaticResource SectionTitle}'/>
-            </StackPanel>
+            <DockPanel Grid.Row='0' Margin='0,0,0,8'>
+              <CheckBox x:Name='chkQuestNestFirst' DockPanel.Dock='Right' Content='둥지 퀘스트 먼저 보기' VerticalAlignment='Center' Margin='8,0,0,0' FontWeight='SemiBold' Foreground='#2C5E3F'/>
+              <StackPanel Orientation='Horizontal'>
+                <Border Style='{StaticResource StepBadge}'><TextBlock Text='2' Style='{StaticResource StepNum}'/></Border>
+                <TextBlock x:Name='lblQuestSec2' Text='동시 클리어 추천 조합 (클리어한 조합의 [✓ 완료]를 눌러 비우세요)' Style='{StaticResource SectionTitle}'/>
+              </StackPanel>
+            </DockPanel>
             <ScrollViewer Grid.Row='1' VerticalScrollBarVisibility='Auto'>
               <StackPanel x:Name='pnlQuestPlans'/>
             </ScrollViewer>

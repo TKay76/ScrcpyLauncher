@@ -41,6 +41,7 @@ $outExe = Join-Path $dir "ScrcpyLauncher.exe"
   "$dir\ChatInputWindow.cs" `
   "$dir\HuntLinkUiBuilder.cs" `
   "$dir\ConnectionInfoHelper.cs" `
+  "$dir\AudioMuteHelper.cs" `
   "$dir\QuestOcrService.cs" `
   "$dir\MainWindow.cs"
 

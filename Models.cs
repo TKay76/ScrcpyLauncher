@@ -109,6 +109,8 @@ namespace ScrcpyLauncher
         public int LastWinH { get; set; }
         public string ExtraScrcpyArgs { get; set; }
         public string SelectedVisualPreset { get; set; }
+        public bool NestQuestsFirst { get; set; }
+        public bool AutoMuteBackground { get; set; }
 
         public LauncherSettings()
         {

@@ -184,14 +184,19 @@ namespace ScrcpyLauncher
 
         public static string GetMonstersForRegionAndSpecies(string region, string species, bool radiantOnly, bool includeRadiant)
         {
-            if (string.IsNullOrEmpty(species) || species == "융광종") return "";
+            if (species == "융광종")
+            {
+                radiantOnly = true;
+                species = "";
+            }
+            if (string.IsNullOrEmpty(species) && !radiantOnly) return "";
             bool filterRegion = !string.IsNullOrEmpty(region) && FieldRegions.Contains(region);
 
             var names = new List<string>();
             for (int i = 0; i < MonsterCatalog.Length; i++)
             {
                 var m = MonsterCatalog[i];
-                if (m.Species != species) continue;
+                if (!string.IsNullOrEmpty(species) && m.Species != species) continue;
                 if (radiantOnly && !m.IsRadiant) continue;
                 if (!radiantOnly && !includeRadiant && m.IsRadiant) continue;
                 if (filterRegion && !m.Regions.Contains(region)) continue;
@@ -640,7 +645,7 @@ namespace ScrcpyLauncher
             };
         }
 
-        public static List<QuestPlanGroup> BuildSimultaneousPlans(List<QuestEntry> quests)
+        public static List<QuestPlanGroup> BuildSimultaneousPlans(List<QuestEntry> quests, bool nestFirst = false)
         {
             var result = new List<QuestPlanGroup>();
             if (quests == null || quests.Count == 0) return result;
@@ -739,25 +744,33 @@ namespace ScrcpyLauncher
                 var slayList = list.Where(x => x.ActionType == "토벌").ToList();
                 var huntList = list.Where(x => x.ActionType != "포획" && x.ActionType != "토벌").ToList();
 
-                var bonus = new List<QuestEntry>();
+                var bonusNormal = new List<QuestEntry>();
+                var bonusRadiant = new List<QuestEntry>();
                 foreach (var af in anyFieldQuests)
                 {
-                    if (string.IsNullOrEmpty(af.Species) || string.IsNullOrEmpty(rawSp) || af.Species == rawSp)
-                        bonus.Add(af);
+                    if (af.Species == "융광종")
+                    {
+                        bonusRadiant.Add(af);
+                    }
+                    else if (string.IsNullOrEmpty(af.Species) || string.IsNullOrEmpty(rawSp) || af.Species == rawSp)
+                    {
+                        bonusNormal.Add(af);
+                    }
                 }
 
                 List<QuestEntry> regionRadiants;
                 radiantByRegion.TryGetValue(region, out regionRadiants);
                 bool hasNonCapture = (slayList.Count > 0 || huntList.Count > 0);
                 // Only stack Radiant if this species actually spawns as Radiant in THIS region!
-                bool canStackRadiant = (hasNonCapture && regionRadiants != null && regionRadiants.Count > 0 && !string.IsNullOrEmpty(radiantMonsters));
+                bool hasAnyRadiantQuest = ((regionRadiants != null && regionRadiants.Count > 0) || bonusRadiant.Count > 0);
+                bool canStackRadiant = (hasNonCapture && hasAnyRadiantQuest && !string.IsNullOrEmpty(radiantMonsters));
 
                 if (capList.Count > 0 && (slayList.Count > 0 || canStackRadiant))
                 {
                     var capCombined = new List<QuestEntry>();
                     capCombined.AddRange(capList);
                     capCombined.AddRange(huntList);
-                    capCombined.AddRange(bonus);
+                    capCombined.AddRange(bonusNormal);
                     AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monstersCap, capCombined);
 
                     var nonCap = new List<QuestEntry>();
@@ -765,11 +778,19 @@ namespace ScrcpyLauncher
                     nonCap.AddRange(huntList);
                     if (canStackRadiant)
                     {
-                        nonCap.AddRange(regionRadiants);
-                        foreach (var rq in regionRadiants) usedRadiantIds.Add(rq.Id);
+                        if (regionRadiants != null && regionRadiants.Count > 0)
+                        {
+                            nonCap.AddRange(regionRadiants);
+                            foreach (var rq in regionRadiants) usedRadiantIds.Add(rq.Id);
+                        }
+                        if (bonusRadiant.Count > 0)
+                        {
+                            nonCap.AddRange(bonusRadiant);
+                            foreach (var brq in bonusRadiant) usedAnyFieldIds.Add(brq.Id);
+                        }
                     }
-                    nonCap.AddRange(bonus);
-                    if (nonCap.Count > bonus.Count)
+                    nonCap.AddRange(bonusNormal);
+                    if (nonCap.Count > bonusNormal.Count)
                     {
                         string lbl = canStackRadiant ? ("융광종(" + spLabel + ")") : spLabel;
                         string act = slayList.Count > 0 ? "★토벌" : "★사냥";
@@ -779,7 +800,7 @@ namespace ScrcpyLauncher
                 else if (capList.Count > 0)
                 {
                     var combined = new List<QuestEntry>(list);
-                    combined.AddRange(bonus);
+                    combined.AddRange(bonusNormal);
                     AddFieldGroupsSplitByWeapon(allGroups, region, spLabel, "★포획", monstersCap, combined);
                 }
                 else
@@ -787,19 +808,27 @@ namespace ScrcpyLauncher
                     var combined = new List<QuestEntry>(list);
                     if (canStackRadiant)
                     {
-                        combined.AddRange(regionRadiants);
-                        foreach (var rq in regionRadiants) usedRadiantIds.Add(rq.Id);
+                        if (regionRadiants != null && regionRadiants.Count > 0)
+                        {
+                            combined.AddRange(regionRadiants);
+                            foreach (var rq in regionRadiants) usedRadiantIds.Add(rq.Id);
+                        }
+                        if (bonusRadiant.Count > 0)
+                        {
+                            combined.AddRange(bonusRadiant);
+                            foreach (var brq in bonusRadiant) usedAnyFieldIds.Add(brq.Id);
+                        }
                     }
-                    combined.AddRange(bonus);
+                    combined.AddRange(bonusNormal);
                     string lbl = canStackRadiant ? ("융광종(" + spLabel + ")") : spLabel;
                     string act = slayList.Count > 0 ? "★토벌" : "★사냥";
                     AddFieldGroupsSplitByWeapon(allGroups, region, lbl, act, canStackRadiant ? radiantMonsters : monstersAll, combined);
                 }
 
-                foreach (var bq in bonus) usedAnyFieldIds.Add(bq.Id);
+                foreach (var bq in bonusNormal) usedAnyFieldIds.Add(bq.Id);
             }
 
-            // 3. Remaining Radiant (융광종) quests: pair ONLY with any-field species that ACTUALLY spawn as Radiant in THIS region!
+            // 3. Remaining Radiant (융광종) quests: pair with any-field Radiant quests AND any-field species that ACTUALLY spawn as Radiant in THIS region!
             var availableAnyFieldForRadiant = anyFieldQuests.Where(q => !usedAnyFieldIds.Contains(q.Id)).GroupBy(q => q.Species ?? "").ToList();
             var radiantConsumedAnyFieldIds = new HashSet<string>();
             foreach (var kv in radiantByRegion)
@@ -808,29 +837,37 @@ namespace ScrcpyLauncher
                 var rem = kv.Value.Where(q => !usedRadiantIds.Contains(q.Id)).ToList();
                 if (rem.Count == 0) continue;
 
-                bool pairedAny = false;
+                // Any-field "융광종" quests (e.g. 필드에서 원거리/근접 무기로 융광종 사냥) ALWAYS match every regional Radiant quest!
+                var afRadiantAll = anyFieldQuests.Where(q => !usedAnyFieldIds.Contains(q.Id) && q.Species == "융광종").ToList();
+                var remWithAfRad = new List<QuestEntry>(rem);
+                remWithAfRad.AddRange(afRadiantAll);
+                foreach (var aq in afRadiantAll) radiantConsumedAnyFieldIds.Add(aq.Id);
+
+                bool pairedSpecies = false;
                 if (availableAnyFieldForRadiant.Count > 0)
                 {
                     foreach (var grp in availableAnyFieldForRadiant)
                     {
                         string sp = grp.Key;
+                        if (sp == "융광종") continue; // Already combined into remWithAfRad above
                         string radiantOnlyMonsters = GetMonstersForRegionAndSpecies(region, sp, true, false);
                         // Skip impossible combinations (e.g. 어룡종 does NOT spawn in 부패의 심연!)
                         if (!string.IsNullOrEmpty(sp) && string.IsNullOrEmpty(radiantOnlyMonsters))
                             continue;
 
-                        var combined = new List<QuestEntry>(rem);
+                        var combined = new List<QuestEntry>(remWithAfRad);
                         combined.AddRange(grp.ToList());
                         string lbl = string.IsNullOrEmpty(sp) ? "융광종" : ("융광종(" + sp + ")");
                         AddFieldGroupsSplitByWeapon(allGroups, region, lbl, "★사냥", radiantOnlyMonsters, combined);
                         foreach (var aq in grp) radiantConsumedAnyFieldIds.Add(aq.Id);
-                        pairedAny = true;
+                        pairedSpecies = true;
                     }
                 }
 
-                if (!pairedAny)
+                if (!pairedSpecies)
                 {
-                    AddFieldGroupsSplitByWeapon(allGroups, region, "융광종", "★사냥", "", rem);
+                    string allRegRadiants = GetMonstersForRegionAndSpecies(region, "", true, false);
+                    AddFieldGroupsSplitByWeapon(allGroups, region, "융광종", "★사냥", allRegRadiants, remWithAfRad);
                 }
             }
             foreach (var id in radiantConsumedAnyFieldIds) usedAnyFieldIds.Add(id);
@@ -848,9 +885,11 @@ namespace ScrcpyLauncher
                 }
             }
 
-            // Sort strictly by highest simultaneous clear count descending (Nest does NOT force-override higher counts!)
+            // Sort by Nest-first if enabled, otherwise strictly by highest simultaneous clear count descending
             allGroups.Sort((a, b) =>
             {
+                if (nestFirst && a.IsNestGroup != b.IsNestGroup)
+                    return a.IsNestGroup ? -1 : 1;
                 int cmp = b.Count.CompareTo(a.Count);
                 if (cmp != 0) return cmp;
                 if (a.IsNestGroup != b.IsNestGroup) return a.IsNestGroup ? -1 : 1;

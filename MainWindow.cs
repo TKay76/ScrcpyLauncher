@@ -126,6 +126,9 @@ namespace ScrcpyLauncher
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern bool SetWindowText(IntPtr hWnd, string lpString);
 
@@ -299,7 +302,9 @@ namespace ScrcpyLauncher
         // HuntLink v2.0 Sidebar, Presets, Home Summary, Codex, Extra Args, Collapsible Log
         private RadioButton _navHome, _navKeymap, _navQuest, _navCodex, _navAdvanced;
         private FrameworkElement _pageHome, _pageKeymap, _pageQuest, _pageCodex, _pageAdvanced;
-        private Button _btnPreset1080, _btnPreset1440, _btnPresetNative, _btnPresetWifi;
+        private Button _btnPreset1080, _btnPreset1440, _btnPresetMonitor, _btnPresetNative, _btnPresetWifi;
+        private CheckBox _chkAutoMuteBg, _chkQuestNestFirst;
+        private bool _lastAutoMuteState = false;
         private Border _bdHomeQuestCard, _bdLogDrawer;
         private Button _btnGoQuestTab, _btnBottomOpenFolder, _btnToggleLog;
         private TextBlock _txtHomeQuestMeta, _txtHomeQuestRec;
@@ -557,8 +562,11 @@ namespace ScrcpyLauncher
 
             _btnPreset1080 = (Button)root.FindName("btnPreset1080");
             _btnPreset1440 = (Button)root.FindName("btnPreset1440");
+            _btnPresetMonitor = (Button)root.FindName("btnPresetMonitor");
             _btnPresetNative = (Button)root.FindName("btnPresetNative");
             _btnPresetWifi = (Button)root.FindName("btnPresetWifi");
+            _chkAutoMuteBg = (CheckBox)root.FindName("chkAutoMuteBg");
+            _chkQuestNestFirst = (CheckBox)root.FindName("chkQuestNestFirst");
 
             _bdHomeQuestCard = (Border)root.FindName("bdHomeQuestCard");
             _btnGoQuestTab = (Button)root.FindName("btnGoQuestTab");
@@ -718,15 +726,32 @@ namespace ScrcpyLauncher
 
             _btnPreset1080.Click += (s, e) => ApplyVisualPreset("1080p");
             _btnPreset1440.Click += (s, e) => ApplyVisualPreset("1440p");
+            _btnPresetMonitor.Click += (s, e) => ApplyVisualPreset("monitor");
             _btnPresetNative.Click += (s, e) => ApplyVisualPreset("native");
             _btnPresetWifi.Click += (s, e) => ApplyVisualPreset("wifi");
 
             AttachGuide(_btnPreset1080, "g_p1080_t", "g_p1080_b");
             AttachGuide(_btnPreset1440, "g_p1440_t", "g_p1440_b");
+            AttachGuide(_btnPresetMonitor, "g_pmon_t", "g_pmon_b");
             AttachGuide(_btnPresetNative, "g_pnat_t", "g_pnat_b");
             AttachGuide(_btnPresetWifi, "g_pwifi_t", "g_pwifi_b");
+            AttachGuide(_chkAutoMuteBg, "g_amute_t", "g_amute_b");
+            AttachGuide(_chkQuestNestFirst, "g_qnest_t", "g_qnest_b");
             AttachGuide(_btnQuestBatchScan, "g_qbatch_t", "g_qbatch_b");
             AttachGuide(_txtExtraArgs, "g_extra_t", "g_extra_b");
+
+            _chkAutoMuteBg.Checked += (s, e) => { if (!_isInitializing) SaveSettingsFromUi(); };
+            _chkAutoMuteBg.Unchecked += (s, e) =>
+            {
+                if (!_isInitializing) SaveSettingsFromUi();
+                if (_scrcpyProcess != null && !_scrcpyProcess.HasExited && _lastAutoMuteState)
+                {
+                    AudioMuteHelper.SetProcessMute(_scrcpyProcess.Id, false);
+                    _lastAutoMuteState = false;
+                }
+            };
+            _chkQuestNestFirst.Checked += (s, e) => { if (!_isInitializing) { SaveSettingsFromUi(); RefreshQuestPlannerUi(); } };
+            _chkQuestNestFirst.Unchecked += (s, e) => { if (!_isInitializing) { SaveSettingsFromUi(); RefreshQuestPlannerUi(); } };
 
             _btnGoQuestTab.Click += (s, e) => { _navQuest.IsChecked = true; };
             _bdHomeQuestCard.MouseLeftButtonUp += (s, e) => { _navQuest.IsChecked = true; };
@@ -1021,8 +1046,11 @@ namespace ScrcpyLauncher
             SetTextByName(root, "lblPresetsTitle", Loc.T("lbl_presets_title"));
             if (_btnPreset1080 != null) _btnPreset1080.Content = Loc.T("preset_1080");
             if (_btnPreset1440 != null) _btnPreset1440.Content = Loc.T("preset_1440");
+            if (_btnPresetMonitor != null) _btnPresetMonitor.Content = Loc.T("preset_monitor");
             if (_btnPresetNative != null) _btnPresetNative.Content = Loc.T("preset_native");
             if (_btnPresetWifi != null) _btnPresetWifi.Content = Loc.T("preset_wifi");
+            if (_chkAutoMuteBg != null) _chkAutoMuteBg.Content = Loc.T("chk_auto_mute_bg");
+            if (_chkQuestNestFirst != null) _chkQuestNestFirst.Content = Loc.T("chk_quest_nest_first");
             SetTextByName(root, "lblHomeQuestTitle", Loc.T("lbl_home_quest"));
             if (_btnGoQuestTab != null) _btnGoQuestTab.Content = Loc.T("btn_go_quest");
             SetTextByName(root, "lblQuickOpts", Loc.T("lbl_quick_opts"));
@@ -2581,6 +2609,7 @@ namespace ScrcpyLauncher
             {
                 _liveFpsText = "";
                 _lastAppliedMirrorTitle = "";
+                _lastAutoMuteState = false;
                 HideFpsOverlay();
                 return;
             }
@@ -2592,6 +2621,20 @@ namespace ScrcpyLauncher
                 if (targetHwnd != IntPtr.Zero)
                     UpdateMirrorWindowTitle(targetHwnd);
                 IntPtr launcherHwnd = new WindowInteropHelper(this).Handle;
+
+                // F3: Auto-Mute scrcpy audio when switching to another window (Alt+Tab)
+                if (_chkAutoMuteBg != null && _chkAutoMuteBg.IsChecked == true && targetHwnd != IntPtr.Zero)
+                {
+                    IntPtr fg = GetForegroundWindow();
+                    IntPtr chatHwnd = (_chatWindow != null && _chatWindow.IsVisible) ? new WindowInteropHelper(_chatWindow).Handle : IntPtr.Zero;
+                    bool isGameFocused = (fg == targetHwnd) || (chatHwnd != IntPtr.Zero && fg == chatHwnd);
+                    bool shouldMute = !isGameFocused;
+                    if (shouldMute != _lastAutoMuteState)
+                    {
+                        if (AudioMuteHelper.SetProcessMute(_scrcpyProcess.Id, shouldMute))
+                            _lastAutoMuteState = shouldMute;
+                    }
+                }
 
                 // Track windowed (non-minimized, non-fullscreen) client bounds for Remember Window Pos/Size
                 if (targetHwnd != IntPtr.Zero && !IsIconic(targetHwnd) && (GetWindowLong(targetHwnd, GWL_STYLE) & WS_CAPTION) != 0)
@@ -3070,7 +3113,8 @@ namespace ScrcpyLauncher
                     _scannedQuests.Count, entry.Region, spPart, actPart, wepPart);
                 if (_scannedQuests.Count >= 10)
                 {
-                    var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests);
+                    bool nestFirst = _chkQuestNestFirst != null && _chkQuestNestFirst.IsChecked == true;
+            var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests, nestFirst);
                     note = string.Format("[10/10 완료] {0}", QuestOcrService.GetTopRecommendation(plans, _scannedQuests.Count));
                 }
 
@@ -3151,7 +3195,8 @@ namespace ScrcpyLauncher
                 QuestOcrService.SaveActiveQuests(_scannedQuests);
             _txtQuestCount.Text = Loc.F("q_count_fmt", _scannedQuests.Count);
 
-            var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests);
+            bool nestFirst = _chkQuestNestFirst != null && _chkQuestNestFirst.IsChecked == true;
+            var plans = QuestOcrService.BuildSimultaneousPlans(_scannedQuests, nestFirst);
             string topRec = _scannedQuests.Count == 0
                 ? Loc.T("q_empty_banner")
                 : QuestOcrService.GetTopRecommendation(plans, _scannedQuests.Count);
@@ -3444,20 +3489,25 @@ namespace ScrcpyLauncher
                     hwnd = _scrcpyProcess.MainWindowHandle;
                 }
 
+                // Always copy to PC clipboard first & restore game window focus BEFORE pasting
+                // (Fixes friend search / Unity TMP_InputField boxes that drop paste if sent while unfocused!)
+                try { Clipboard.SetText(text); } catch { }
+                if (hwnd != IntPtr.Zero)
+                {
+                    SetForegroundWindow(hwnd);
+                    await Task.Delay(75);
+                }
+
                 if (_controlClient != null && _controlClient.IsConnected && _controlClient.SetClipboardAndPaste(text))
                 {
-                    if (hwnd != IntPtr.Zero) SetForegroundWindow(hwnd);
                     AppendLog("[한글 채팅] 전송 완료: " + text);
                     return;
                 }
 
                 // Fallback for Gamepad / Normal mode (when auxiliary control client is not connected):
-                // Set PC clipboard and send Ctrl+V to scrcpy window so scrcpy pastes UTF-8 directly into Android!
-                Clipboard.SetText(text);
+                // Send Ctrl+V to focused scrcpy window so scrcpy pastes UTF-8 directly into Android!
                 if (hwnd != IntPtr.Zero)
                 {
-                    SetForegroundWindow(hwnd);
-                    await Task.Delay(55);
                     keybd_event(0x11, 0, 0, UIntPtr.Zero);               // Ctrl down
                     keybd_event(0x56, 0, 0, UIntPtr.Zero);               // V down
                     keybd_event(0x56, 0, KEYEVENTF_KEYUP, UIntPtr.Zero); // V up
@@ -3568,6 +3618,27 @@ namespace ScrcpyLauncher
                     _chkLowLatency.IsChecked = false;
                     _chkAudioSafe.IsChecked = false;
                 }
+                else if (presetId == "monitor")
+                {
+                    var scr = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
+                    int mw = scr.Width;
+                    int mh = scr.Height;
+                    // Cap ultra-high 4K+ height to 1440p preserving exact monitor aspect ratio so mobile GPU stays smooth
+                    if (mh > 1440)
+                    {
+                        double scale = 1440.0 / mh;
+                        mw = ((int)Math.Round(mw * scale) / 8) * 8;
+                        mh = 1440;
+                    }
+                    int dpi = Math.Max(220, Math.Min(420, (int)Math.Round(mh * 280.0 / 1080.0)));
+                    SelectComboByTag(_cmbCodec, mw >= 2560 ? "h265" : "h264", mw >= 2560 ? 1 : 0);
+                    _txtBitrate.Text = "20";
+                    _chkVirtualDisplay.IsChecked = true;
+                    _cmbVdSpec.Text = string.Format("{0}x{1}/{2}", mw, mh, dpi);
+                    _chkNoVdDecorations.IsChecked = true;
+                    _chkLowLatency.IsChecked = false;
+                    _chkAudioSafe.IsChecked = false;
+                }
                 else if (presetId == "native")
                 {
                     SelectComboByTag(_cmbCodec, "h264", 0);
@@ -3604,6 +3675,7 @@ namespace ScrcpyLauncher
             {
                 Tuple.Create("1080p", _btnPreset1080),
                 Tuple.Create("1440p", _btnPreset1440),
+                Tuple.Create("monitor", _btnPresetMonitor),
                 Tuple.Create("native", _btnPresetNative),
                 Tuple.Create("wifi", _btnPresetWifi)
             };
@@ -3850,6 +3922,8 @@ namespace ScrcpyLauncher
             _chkLowLatency.IsChecked = _settings.LowLatency;
             _chkNoAudio.IsChecked = _settings.NoAudio;
             _chkAudioSafe.IsChecked = _settings.AudioBufferSafe;
+            if (_chkAutoMuteBg != null) _chkAutoMuteBg.IsChecked = _settings.AutoMuteBackground;
+            if (_chkQuestNestFirst != null) _chkQuestNestFirst.IsChecked = _settings.NestQuestsFirst;
             _chkFullscreen.IsChecked = _settings.Fullscreen;
             _chkAlwaysOnTop.IsChecked = _settings.AlwaysOnTop;
             _chkRememberWin.IsChecked = _settings.RememberWindowBounds;
@@ -3910,6 +3984,8 @@ namespace ScrcpyLauncher
             _settings.LowLatency = _chkLowLatency.IsChecked == true;
             _settings.NoAudio = _chkNoAudio.IsChecked == true;
             _settings.AudioBufferSafe = _chkAudioSafe.IsChecked == true;
+            if (_chkAutoMuteBg != null) _settings.AutoMuteBackground = _chkAutoMuteBg.IsChecked == true;
+            if (_chkQuestNestFirst != null) _settings.NestQuestsFirst = _chkQuestNestFirst.IsChecked == true;
             _settings.Fullscreen = _chkFullscreen.IsChecked == true;
             _settings.AlwaysOnTop = _chkAlwaysOnTop.IsChecked == true;
             _settings.RememberWindowBounds = _chkRememberWin.IsChecked == true;

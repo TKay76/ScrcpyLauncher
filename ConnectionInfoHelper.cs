@@ -177,6 +177,10 @@ namespace ScrcpyLauncher
             if (hInfo == IntPtr.Zero || hInfo == new IntPtr(-1))
                 return MakeFallbackUsb();
 
+            // Track highest detected USB speed across all hubs (external USB 3.0 hubs expose both a 2.0 companion hub and a 3.0 SS hub!)
+            int bestRank = -1; // 0=Low, 1=Full, 2=High(USB2), 3=SuperSpeed(5Gbps), 4=SuperSpeedPlus(10Gbps+)
+            bool bestSsCapable = false;
+
             try
             {
                 uint idx = 0;
@@ -223,8 +227,10 @@ namespace ScrcpyLauncher
                                     if (!string.Equals(ser, targetSerial, StringComparison.OrdinalIgnoreCase))
                                         continue;
 
+                                    bool isSs = (ex.Speed == 3) || (ex.DeviceDescriptor.bcdUSB >= 0x0300);
                                     bool isSsp = false;
                                     bool isSsCapable = (ex.DeviceDescriptor.bcdUSB >= 0x0210);
+
                                     int v2Sz = Marshal.SizeOf(typeof(USB_NODE_CONNECTION_INFORMATION_EX_V2));
                                     IntPtr pV2 = Marshal.AllocHGlobal(v2Sz);
                                     try
@@ -240,54 +246,23 @@ namespace ScrcpyLauncher
                                         if (DeviceIoControl(hHub, IOCTL_USB_GET_NODE_CONNECTION_INFORMATION_EX_V2, pV2, v2Sz, pV2, v2Sz, out r2, IntPtr.Zero))
                                         {
                                             var v2Out = (USB_NODE_CONNECTION_INFORMATION_EX_V2)Marshal.PtrToStructure(pV2, typeof(USB_NODE_CONNECTION_INFORMATION_EX_V2));
+                                            // bit 0: DeviceIsOperatingAtSuperSpeedOrHigher
+                                            // bit 1: DeviceIsSuperSpeedCapableOrHigher
+                                            // bit 2: DeviceIsOperatingAtSuperSpeedPlusOrHigher
+                                            // bit 3: DeviceIsSuperSpeedPlusCapableOrHigher
+                                            if ((v2Out.Flags & 1) != 0) isSs = true;
                                             if ((v2Out.Flags & 4) != 0) isSsp = true;
                                             if ((v2Out.Flags & 2) != 0 || (v2Out.Flags & 8) != 0) isSsCapable = true;
                                         }
                                     }
                                     finally { Marshal.FreeHGlobal(pV2); }
 
-                                    if (isSsp)
+                                    int rank = isSsp ? 4 : (isSs ? 3 : (int)ex.Speed);
+                                    if (rank > bestRank)
                                     {
-                                        return new ConnectionLinkInfo
-                                        {
-                                            IsWireless = false,
-                                            Tier = "fast",
-                                            BadgeText = "⚡ USB 3.2 Gen 2 · 10 Gbps+",
-                                            DetailText = Loc.T("conn_usb3_ok"),
-                                            TooltipText = Loc.T("conn_usb3_tip")
-                                        };
+                                        bestRank = rank;
+                                        bestSsCapable = isSsCapable;
                                     }
-                                    if (ex.Speed == 3)
-                                    {
-                                        return new ConnectionLinkInfo
-                                        {
-                                            IsWireless = false,
-                                            Tier = "fast",
-                                            BadgeText = "⚡ USB 3.2 Gen 1 · 5 Gbps",
-                                            DetailText = Loc.T("conn_usb3_ok"),
-                                            TooltipText = Loc.T("conn_usb3_tip")
-                                        };
-                                    }
-                                    if (ex.Speed == 2)
-                                    {
-                                        return new ConnectionLinkInfo
-                                        {
-                                            IsWireless = false,
-                                            Tier = "mid",
-                                            BadgeText = "🔌 USB 2.0 · 480 Mbps",
-                                            DetailText = isSsCapable ? Loc.T("conn_usb2_upgrade") : Loc.T("conn_usb2_ok"),
-                                            TooltipText = isSsCapable ? Loc.T("conn_usb2_upgrade_tip") : Loc.T("conn_usb2_tip")
-                                        };
-                                    }
-
-                                    return new ConnectionLinkInfo
-                                    {
-                                        IsWireless = false,
-                                        Tier = "warn",
-                                        BadgeText = ex.Speed == 1 ? "⚠ USB 1.1 · 12 Mbps" : "⚠ USB 1.0 · 1.5 Mbps",
-                                        DetailText = Loc.T("conn_usb1_warn"),
-                                        TooltipText = Loc.T("conn_usb1_warn")
-                                    };
                                 }
                                 finally { Marshal.FreeHGlobal(pEx); }
                             }
@@ -299,6 +274,51 @@ namespace ScrcpyLauncher
             }
             catch { }
             finally { SetupDiDestroyDeviceInfoList(hInfo); }
+
+            if (bestRank == 4)
+            {
+                return new ConnectionLinkInfo
+                {
+                    IsWireless = false,
+                    Tier = "fast",
+                    BadgeText = "⚡ USB 3.2 Gen 2 · 10 Gbps+",
+                    DetailText = Loc.T("conn_usb3_ok"),
+                    TooltipText = Loc.T("conn_usb3_tip")
+                };
+            }
+            if (bestRank == 3)
+            {
+                return new ConnectionLinkInfo
+                {
+                    IsWireless = false,
+                    Tier = "fast",
+                    BadgeText = "⚡ USB 3.2 Gen 1 · 5 Gbps",
+                    DetailText = Loc.T("conn_usb3_ok"),
+                    TooltipText = Loc.T("conn_usb3_tip")
+                };
+            }
+            if (bestRank == 2)
+            {
+                return new ConnectionLinkInfo
+                {
+                    IsWireless = false,
+                    Tier = "mid",
+                    BadgeText = "🔌 USB 2.0 · 480 Mbps",
+                    DetailText = bestSsCapable ? Loc.T("conn_usb2_upgrade") : Loc.T("conn_usb2_ok"),
+                    TooltipText = bestSsCapable ? Loc.T("conn_usb2_upgrade_tip") : Loc.T("conn_usb2_tip")
+                };
+            }
+            if (bestRank == 0 || bestRank == 1)
+            {
+                return new ConnectionLinkInfo
+                {
+                    IsWireless = false,
+                    Tier = "warn",
+                    BadgeText = bestRank == 1 ? "⚠ USB 1.1 · 12 Mbps" : "⚠ USB 1.0 · 1.5 Mbps",
+                    DetailText = Loc.T("conn_usb1_warn"),
+                    TooltipText = Loc.T("conn_usb1_warn")
+                };
+            }
 
             return MakeFallbackUsb();
         }

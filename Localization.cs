@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "HuntLink v2.0 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0 — MHO PC Launcher", "HuntLink v2.0 — MHO PC ランチャー");
+            A("win_title", "HuntLink v2.0.1 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.1 — MHO PC Launcher", "HuntLink v2.0.1 — MHO PC ランチャー");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -101,8 +101,17 @@ namespace ScrcpyLauncher
             A("lbl_presets_title", "화면 · 성능 원클릭 프리셋", "One-Click Display & Performance Presets", "ワンクリック映像・性能プリセット");
             A("preset_1080", "추천 1080p", "Recommended 1080p", "おすすめ 1080p");
             A("preset_1440", "고화질 1440p", "High-Res 1440p", "高画質 1440p");
+            A("preset_monitor", "내 모니터 맞춤", "Match Monitor", "モニター解像度");
             A("preset_native", "기기 본체 화면", "Native Device Screen", "端末本体画面");
             A("preset_wifi", "무선 안정", "Wi-Fi Smooth", "無線安定");
+            A("chk_auto_mute_bg", "다른 창 이동 시 음소거", "Auto-Mute in Background", "他ウィンドウ時ミュート");
+            A("chk_quest_nest_first", "둥지 퀘스트 먼저 보기", "Show Nest Quests First", "巣クエストを上に表示");
+            A("g_pmon_t", "내 모니터 맞춤 프리셋", "Match Monitor Preset", "モニター解像度プリセット");
+            A("g_pmon_b", "현재 PC 주 모니터 해상도와 비율(16:9 · 21:9 울트라와이드 등)을 자동 감지해 가상 디스플레이 해상도와 DPI를 자동으로 맞춰줍니다.", "Automatically detects your primary PC monitor resolution & aspect ratio (16:9, 21:9 ultrawide, etc.) and configures Virtual Display + DPI to match.", "PCメインモニターの解像度・比率(16:9 / 21:9等)を自動検出し、仮想ディスプレイ解像度とDPIを自動で合わせます。");
+            A("g_amute_t", "다른 창 이동 시 자동 음소거", "Auto-Mute When Unfocused", "非アクティブ時自動ミュート");
+            A("g_amute_b", "Alt+Tab 등으로 다른 창을 보고 있을 때 미러링 소리만 자동으로 음소거하고, 게임 창으로 돌아오면 즉시 소리를 복구합니다. (지연 0%)", "Automatically mutes scrcpy audio when you switch to another window (Alt+Tab) and unmutes immediately when you return. (0% latency impact)", "Alt+Tab等で別ウィンドウへ移動するとミラーリング音声のみ自動ミュートし、戻ると即座に解除します。(遅延0%)");
+            A("g_qnest_t", "둥지 퀘스트 먼저 보기", "Prioritize Nest Quests", "巣クエストを優先表示");
+            A("g_qnest_b", "체크하면 퀘스트 플래너 목록 맨 위에 [둥지] 퀘스트를 우선 배치합니다. 둥지 퀘스트를 먼저 털고 필드 퀘스트를 정리할 때 유용합니다.", "When checked, places [Nest] quests at the top of the Quest Planner list before field quests.", "チェックすると[巣]クエストをプランナーの一番上に優先表示します。");
             A("lbl_home_quest", "긴급 퀘스트 플래너", "Urgent Quest Planner", "緊急クエストプランナー");
             A("btn_go_quest", "플래너 열기 →", "Open Planner →", "プランナーへ →");
             A("lbl_quick_opts", "자주 쓰는 빠른 옵션 (세부 설정은 좌측 [고급 설정] 탭)", "Quick Options (See [Advanced] tab for full settings)", "よく使う設定 (詳細は左の[詳細設定]タブ)");
