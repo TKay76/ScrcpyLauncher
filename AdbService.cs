@@ -167,7 +167,9 @@ namespace ScrcpyLauncher
                     Serial = serial,
                     State = state,
                     Model = model,
-                    IsWifi = serial.Contains(":")
+                    IsWifi = serial.Contains(":") ||
+                             serial.StartsWith("adb-", StringComparison.OrdinalIgnoreCase) ||
+                             serial.IndexOf("._adb-tls-", StringComparison.OrdinalIgnoreCase) >= 0
                 });
             }
 
@@ -272,6 +274,28 @@ namespace ScrcpyLauncher
             if (m.Success) return m.Groups[1].Value;
 
             return "";
+        }
+
+        public async Task<Tuple<List<string>, string>> GetVideoEncodersAsync(string serial, string codecFilter)
+        {
+            var encoders = new List<string>();
+            if (!IsValid || string.IsNullOrWhiteSpace(serial))
+                return Tuple.Create(encoders, "");
+
+            var res = await RunAsync(ScrcpyPath, string.Format("-s \"{0}\" --list-encoders", serial), 12000);
+            string raw = res.Combined ?? "";
+            string wantCodec = (codecFilter ?? "").Trim().ToLowerInvariant();
+            foreach (var line in raw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var m = Regex.Match(line, @"--video-codec=(\S+)\s+--video-encoder=(\S+)");
+                if (!m.Success) continue;
+                string c = m.Groups[1].Value.ToLowerInvariant();
+                string enc = m.Groups[2].Value.Trim();
+                if (!string.IsNullOrEmpty(wantCodec) && c != wantCodec) continue;
+                if (!encoders.Contains(enc))
+                    encoders.Add(enc);
+            }
+            return Tuple.Create(encoders, raw);
         }
 
         public async Task<List<AppItem>> GetInstalledAppsAsync(string serial)

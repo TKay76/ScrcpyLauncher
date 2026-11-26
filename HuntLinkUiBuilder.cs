@@ -778,6 +778,28 @@ namespace ScrcpyLauncher
                   <ComboBoxItem Content='OpenGL' Tag='opengl'/>
                 </ComboBox>
               </Grid>
+              <Grid Margin='0,0,0,9'>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width='Auto'/>
+                  <ColumnDefinition Width='*'/>
+                  <ColumnDefinition Width='Auto'/>
+                  <ColumnDefinition Width='Auto'/>
+                  <ColumnDefinition Width='110'/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name='lblVideoEncoder' Grid.Column='0' Text='인코더' Style='{StaticResource FieldLabel}'/>
+                <ComboBox x:Name='cmbVideoEncoder' Grid.Column='1' IsEditable='True' Margin='0,0,6,0'>
+                  <ComboBoxItem Content='자동 (기본)' Tag=''/>
+                </ComboBox>
+                <Button x:Name='btnListEncoders' Grid.Column='2' Content='인코더 조회' Style='{StaticResource SubBtn}' Margin='0,0,10,0'/>
+                <TextBlock x:Name='lblVideoBuffer' Grid.Column='3' Text='영상 버퍼' Style='{StaticResource FieldLabel}'/>
+                <ComboBox x:Name='cmbVideoBuffer' Grid.Column='4' IsEditable='True'>
+                  <ComboBoxItem Content='0 (자동)' Tag='0'/>
+                  <ComboBoxItem Content='30 ms' Tag='30'/>
+                  <ComboBoxItem Content='50 ms' Tag='50'/>
+                  <ComboBoxItem Content='80 ms' Tag='80'/>
+                  <ComboBoxItem Content='120 ms' Tag='120'/>
+                </ComboBox>
+              </Grid>
               <WrapPanel Margin='2,0,0,4'>
                 <CheckBox x:Name='chkStayAwake' Content='절전 방지 (-w)'/>
                 <CheckBox x:Name='chkLowLatency' Content='저지연 인코딩'/>

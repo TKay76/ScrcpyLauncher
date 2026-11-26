@@ -111,6 +111,8 @@ namespace ScrcpyLauncher
         public string SelectedVisualPreset { get; set; }
         public bool NestQuestsFirst { get; set; }
         public bool AutoMuteBackground { get; set; }
+        public string VideoEncoder { get; set; }
+        public int VideoBufferMs { get; set; }
 
         public LauncherSettings()
         {

@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "HuntLink v2.0.1 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.1 — MHO PC Launcher", "HuntLink v2.0.1 — MHO PC ランチャー");
+            A("win_title", "HuntLink v2.0.2 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.2 — MHO PC Launcher", "HuntLink v2.0.2 — MHO PC ランチャー");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -281,6 +281,15 @@ namespace ScrcpyLauncher
             A("lbl_codec", "코덱", "Codec", "コーデック");
             A("lbl_maxsize", "최대크기", "Max Size", "最大サイズ");
             A("lbl_renderer", "렌더러", "Renderer", "レンダラ");
+            A("lbl_video_encoder", "인코더", "Encoder", "エンコーダ");
+            A("btn_list_encoders", "인코더 조회", "List Encoders", "一覧取得");
+            A("cmb_encoder_auto", "자동 (기본)", "Auto (Default)", "自動 (既定)");
+            A("lbl_video_buffer", "영상 버퍼", "Video Buffer", "映像バッファ");
+            A("cmb_vbuf_0", "0 (자동)", "0 (Auto)", "0 (自動)");
+            A("g_venc_t", "영상 인코더 직접 선택 (--video-encoder)", "Select Video Encoder (--video-encoder)", "映像エンコーダ指定 (--video-encoder)");
+            A("g_venc_b", "기본은 자동입니다. 슬로우모션·끊김이 간헐적으로 생기면 [인코더 조회]를 눌러 기기의 다른 하드웨어 인코더를 직접 고정해 보세요.", "Default is Auto. If you experience intermittent slow-motion or pacing glitches, click [List Encoders] and lock a specific device hardware encoder.", "既定は自動です。スローモーションやカクつきが出る場合は[一覧取得]から別のハードウェアエンコーダを固定してみてください。");
+            A("g_vbuf_t", "영상 버퍼 (--video-buffer)", "Video Buffer (--video-buffer)", "映像バッファ (--video-buffer)");
+            A("g_vbuf_b", "0(자동)이 최저 지연입니다. 화면이 슬로우모션→빨리감기처럼 흔들릴 때 30~50ms를 주면 프레임 페이싱이 훨씬 부드러워집니다.", "0 (Auto) gives lowest latency. Setting 30–50ms smooths out frame pacing if video feels jerky or does slow-mo/catch-up.", "0(自動)が最低遅延です。映像がスロー→早送りのように乱れる場合、30〜50ms設定すると滑らかになります。");
             A("chk_screen_off", "폰 화면 끄기 (-S)", "Turn Screen Off (-S)", "端末画面オフ (-S)");
             A("chk_stay_awake", "절전 방지 (-w)", "Stay Awake (-w)", "スリープ防止 (-w)");
             A("chk_low_latency", "저지연 인코딩", "Low Latency", "低遅延エンコード");

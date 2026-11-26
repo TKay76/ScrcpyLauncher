@@ -67,6 +67,18 @@ namespace ScrcpyLauncher
             if (pushRes.ExitCode != 0)
                 return Tuple.Create(false, "scrcpy-server 전송 실패: " + pushRes.Combined.Trim());
 
+            // Use Android's software AVC encoder (c2.android.avc.encoder) at tiny 256px/1fps so the auxiliary
+            // keymap control server NEVER contends with the main scrcpy hardware video encoder (fixes slow-mo/catch-up!).
+            // Automatically falls back to default encoder if c2.android.avc.encoder is unavailable.
+            var firstTry = await ConnectServerOnceAsync(serial, ver, displayId, " video_encoder=c2.android.avc.encoder");
+            if (firstTry.Item1)
+                return firstTry;
+
+            return await ConnectServerOnceAsync(serial, ver, displayId, "");
+        }
+
+        private async Task<Tuple<bool, string>> ConnectServerOnceAsync(string serial, string ver, string displayId, string extraEncoderArg)
+        {
             var rng = new Random();
             string scid = rng.Next(0x10000000, 0x7FFFFFFF).ToString("x8");
             _localPort = rng.Next(27200, 27900);
@@ -79,8 +91,8 @@ namespace ScrcpyLauncher
             // video=true at 1fps is required so scrcpy-server initializes PositionMapper for INJECT_TOUCH_EVENT
             string dispArg = string.IsNullOrWhiteSpace(displayId) ? "" : (" display_id=" + displayId);
             string shellCmd = string.Format(
-                "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / com.genymobile.scrcpy.Server {0} scid={1} log_level=warn tunnel_forward=true video=true audio=false control=true clipboard_autosync=false cleanup=false max_fps=1 max_size=1024 video_bit_rate=100000 send_device_meta=false send_dummy_byte=true{2}",
-                ver, scid, dispArg);
+                "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / com.genymobile.scrcpy.Server {0} scid={1} log_level=warn tunnel_forward=true video=true audio=false control=true clipboard_autosync=false cleanup=false max_fps=1 max_size=256 video_bit_rate=50000 send_device_meta=false send_dummy_byte=true{2}{3}",
+                ver, scid, dispArg, extraEncoderArg);
 
             var psi = new ProcessStartInfo
             {

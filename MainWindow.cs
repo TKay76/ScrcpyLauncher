@@ -204,6 +204,9 @@ namespace ScrcpyLauncher
         private ComboBox _cmbMaxSize;
         private ComboBox _cmbMaxFps;
         private ComboBox _cmbRenderer;
+        private ComboBox _cmbVideoEncoder;
+        private Button _btnListEncoders;
+        private ComboBox _cmbVideoBuffer;
 
         // Control Mode Cards
         private RadioButton _rbModeKeymap;
@@ -459,6 +462,9 @@ namespace ScrcpyLauncher
             _cmbMaxSize = (ComboBox)root.FindName("cmbMaxSize");
             _cmbMaxFps = (ComboBox)root.FindName("cmbMaxFps");
             _cmbRenderer = (ComboBox)root.FindName("cmbRenderer");
+            _cmbVideoEncoder = (ComboBox)root.FindName("cmbVideoEncoder");
+            _btnListEncoders = (Button)root.FindName("btnListEncoders");
+            _cmbVideoBuffer = (ComboBox)root.FindName("cmbVideoBuffer");
 
             _rbModeKeymap = (RadioButton)root.FindName("rbModeKeymap");
             _rbModeGamepad = (RadioButton)root.FindName("rbModeGamepad");
@@ -613,6 +619,9 @@ namespace ScrcpyLauncher
             AttachGuide(_cmbMaxSize, "g_ms_t", "g_ms_b");
             AttachGuide(_cmbMaxFps, "g_fps_t", "g_fps_b");
             AttachGuide(_cmbRenderer, "g_ren_t", "g_ren_b");
+            AttachGuide(_cmbVideoEncoder, "g_venc_t", "g_venc_b");
+            AttachGuide(_btnListEncoders, "g_venc_t", "g_venc_b");
+            AttachGuide(_cmbVideoBuffer, "g_vbuf_t", "g_vbuf_b");
             AttachGuide(_rbModeKeymap, "g_mkm_t", "g_mkm_b");
             AttachGuide(_rbModeGamepad, "g_mgp_t", "g_mgp_b");
             AttachGuide(_rbModeNormal, "g_mnm_t", "g_mnm_b");
@@ -658,6 +667,7 @@ namespace ScrcpyLauncher
             _btnBrowseRecord.Click += BtnBrowseRecord_Click;
             _btnOpenRecord.Click += BtnOpenRecord_Click;
             _btnRefreshApps.Click += async (s, e) => await LoadAppsAsync(true);
+            _btnListEncoders.Click += async (s, e) => await LoadVideoEncodersAsync();
             _btnCopyCmd.Click += (s, e) => { Clipboard.SetText("scrcpy.exe " + BuildScrcpyArguments(null)); AppendLog("[안내] 현재 설정의 실행 명령어가 클립보드에 복사되었습니다."); };
             _btnStart.Click += BtnStart_Click;
             _btnStop.Click += (s, e) => StopScrcpy();
@@ -1104,6 +1114,11 @@ namespace ScrcpyLauncher
             SetTextByName(root, "lblCodec", Loc.T("lbl_codec"));
             SetTextByName(root, "lblMaxSize", Loc.T("lbl_maxsize"));
             SetTextByName(root, "lblRenderer", Loc.T("lbl_renderer"));
+            SetTextByName(root, "lblVideoEncoder", Loc.T("lbl_video_encoder"));
+            if (_btnListEncoders != null) _btnListEncoders.Content = Loc.T("btn_list_encoders");
+            SetTextByName(root, "lblVideoBuffer", Loc.T("lbl_video_buffer"));
+            SetComboItemContentByTag(_cmbVideoEncoder, "", Loc.T("cmb_encoder_auto"));
+            SetComboItemContentByTag(_cmbVideoBuffer, "0", Loc.T("cmb_vbuf_0"));
             _chkTurnScreenOff.Content = Loc.T("chk_screen_off");
             _chkStayAwake.Content = Loc.T("chk_stay_awake");
             _chkLowLatency.Content = Loc.T("chk_low_latency");
@@ -1919,6 +1934,69 @@ namespace ScrcpyLauncher
             UpdateCommandPreview();
         }
 
+        private string GetSelectedVideoEncoder()
+        {
+            if (_cmbVideoEncoder == null) return "";
+            var item = _cmbVideoEncoder.SelectedItem as ComboBoxItem;
+            if (item != null && item.Tag != null)
+                return item.Tag.ToString().Trim();
+            string txt = (_cmbVideoEncoder.Text ?? "").Trim();
+            if (string.IsNullOrEmpty(txt) || txt.StartsWith("자동") || txt.StartsWith("Auto") || txt.StartsWith("自動"))
+                return "";
+            return txt;
+        }
+
+        private async Task LoadVideoEncodersAsync()
+        {
+            var dev = _cmbDevices.SelectedItem as DeviceInfo;
+            if (!_adb.IsValid || dev == null || dev.State != "device")
+            {
+                AppendLog("[진단] 기기가 연결된 상태에서 인코더를 조회할 수 있습니다.");
+                return;
+            }
+            string codec = GetSelectedTag(_cmbCodec, "h264");
+            _btnListEncoders.IsEnabled = false;
+            AppendLog(string.Format("[진단] {0} ({1}) 영상 인코더 목록 조회 중...", dev.Model, codec));
+            try
+            {
+                var res = await _adb.GetVideoEncodersAsync(dev.Serial, codec);
+                var list = res.Item1;
+                string prev = GetSelectedVideoEncoder();
+
+                _cmbVideoEncoder.Items.Clear();
+                _cmbVideoEncoder.Items.Add(new ComboBoxItem { Content = Loc.T("cmb_encoder_auto"), Tag = "" });
+                int selIdx = 0;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    var ci = new ComboBoxItem { Content = list[i], Tag = list[i] };
+                    int idx = _cmbVideoEncoder.Items.Add(ci);
+                    if (string.Equals(list[i], prev, StringComparison.OrdinalIgnoreCase))
+                        selIdx = idx;
+                }
+                _cmbVideoEncoder.SelectedIndex = selIdx;
+
+                if (list.Count > 0)
+                    AppendLog(string.Format("[진단] 사용 가능한 {0} 인코더 ({1}개): {2}", codec, list.Count, string.Join(", ", list.ToArray())));
+                else
+                    AppendLog("[진단] 인코더 목록을 가져오지 못했습니다. (로그 참고)");
+
+                // Open log drawer automatically so user can inspect the full diagnostic output
+                if (_bdLogDrawer != null && _bdLogDrawer.Visibility != Visibility.Visible)
+                {
+                    _bdLogDrawer.Visibility = Visibility.Visible;
+                    if (_btnToggleLog != null) _btnToggleLog.Content = Loc.T("btn_toggle_log_close");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog("[진단 오류] " + ex.Message);
+            }
+            finally
+            {
+                _btnListEncoders.IsEnabled = true;
+            }
+        }
+
         private string GetSelectedTag(ComboBox cmb, string fallback)
         {
             var item = cmb.SelectedItem as ComboBoxItem;
@@ -1939,6 +2017,14 @@ namespace ScrcpyLauncher
 
             string codec = GetSelectedTag(_cmbCodec, "h264");
             args.Add("--video-codec=" + codec);
+
+            string enc = GetSelectedVideoEncoder();
+            if (!string.IsNullOrEmpty(enc))
+                args.Add("--video-encoder=" + enc);
+
+            int vbuf;
+            if (int.TryParse(GetSelectedTag(_cmbVideoBuffer, "0"), out vbuf) && vbuf > 0)
+                args.Add("--video-buffer=" + vbuf);
 
             int bitrate;
             if (int.TryParse(_txtBitrate.Text.Trim(), out bitrate) && bitrate > 0)
@@ -3911,6 +3997,20 @@ namespace ScrcpyLauncher
             SelectComboByTagOrText(_cmbMaxSize, _settings.MaxSize.ToString());
             SelectComboByTagOrText(_cmbMaxFps, _settings.MaxFps.ToString());
             SelectComboByTag(_cmbRenderer, _settings.RenderDriver, 0);
+            if (_cmbVideoEncoder != null)
+            {
+                if (!string.IsNullOrWhiteSpace(_settings.VideoEncoder))
+                    _cmbVideoEncoder.Text = _settings.VideoEncoder;
+                else
+                    _cmbVideoEncoder.SelectedIndex = 0;
+            }
+            if (_cmbVideoBuffer != null)
+            {
+                string vbStr = _settings.VideoBufferMs > 0 ? _settings.VideoBufferMs.ToString() : "0";
+                SelectComboByTag(_cmbVideoBuffer, vbStr, 0);
+                if (_settings.VideoBufferMs > 0 && GetSelectedTag(_cmbVideoBuffer, "0") != vbStr)
+                    _cmbVideoBuffer.Text = vbStr + " ms";
+            }
 
             string mode = (_settings.ControlMode ?? "keymap").ToLowerInvariant();
             if (mode == "gamepad") _rbModeGamepad.IsChecked = true;
@@ -3979,6 +4079,9 @@ namespace ScrcpyLauncher
                 _settings.SelectedKeymapProfile = _activeProfile.Name;
 
             _settings.RenderDriver = GetSelectedTag(_cmbRenderer, "auto");
+            _settings.VideoEncoder = GetSelectedVideoEncoder();
+            int vbufSave;
+            _settings.VideoBufferMs = int.TryParse(GetSelectedTag(_cmbVideoBuffer, "0"), out vbufSave) ? vbufSave : 0;
             _settings.TurnScreenOff = _chkTurnScreenOff.IsChecked == true;
             _settings.StayAwake = _chkStayAwake.IsChecked == true;
             _settings.LowLatency = _chkLowLatency.IsChecked == true;
