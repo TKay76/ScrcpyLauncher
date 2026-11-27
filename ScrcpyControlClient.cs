@@ -69,16 +69,9 @@ namespace ScrcpyLauncher
             if (pushRes.ExitCode != 0)
                 return Tuple.Create(false, "scrcpy-server 전송 실패: " + pushRes.Combined.Trim());
 
-            // Use Android's software AVC encoder (c2.android.avc.encoder) at 1fps + max_size=1920 so the auxiliary
-            // keymap control server NEVER contends with the main scrcpy hardware video encoder (fixes slow-mo/catch-up!),
-            // while staying within the 2048x2048 SW profile cap on QHD/tablets AND preserving full 1920-step aim precision!
-            int usedPort = 0;
-            var firstTry = await ConnectServerOnceAsync(serial, ver, displayId, " video_encoder=c2.android.avc.encoder", 0, p => usedPort = p);
-            if (firstTry.Item1)
-                return firstTry;
-
-            await DisconnectAsync();
-            return await ConnectServerOnceAsync(serial, ver, displayId, "", usedPort, p => usedPort = p);
+            // Use battle-tested default encoder + max_size=1024 at 1fps (proven stable across 600+ devices in v1.6.1;
+            // avoids both 256px aim quantization AND c2.android.avc.encoder 1080p loading-screen stalls!)
+            return await ConnectServerOnceAsync(serial, ver, displayId, "", 0, null);
         }
 
         private async Task<Tuple<bool, string>> ConnectServerOnceAsync(string serial, string ver, string displayId, string extraEncoderArg, int avoidPort, Action<int> onPortPicked)
@@ -101,10 +94,10 @@ namespace ScrcpyLauncher
             if (fwdRes.ExitCode != 0)
                 return Tuple.Create(false, "ADB 포트 포워딩 실패: " + fwdRes.Combined.Trim());
 
-            // video=true at 1fps + max_size=1920 initializes PositionMapper with full 1920-pixel touch precision
+            // video=true at 1fps + max_size=1024 initializes PositionMapper cleanly without freezing virtual displays
             string dispArg = string.IsNullOrWhiteSpace(displayId) ? "" : (" display_id=" + displayId);
             string shellCmd = string.Format(
-                "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / com.genymobile.scrcpy.Server {0} scid={1} log_level=warn tunnel_forward=true video=true audio=false control=true clipboard_autosync=false cleanup=false max_fps=1 max_size=1920 video_bit_rate=100000 send_device_meta=false send_dummy_byte=true{2}{3}",
+                "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / com.genymobile.scrcpy.Server {0} scid={1} log_level=warn tunnel_forward=true video=true audio=false control=true clipboard_autosync=false cleanup=false max_fps=1 max_size=1024 video_bit_rate=100000 send_device_meta=false send_dummy_byte=true{2}{3}",
                 ver, scid, dispArg, extraEncoderArg);
 
             var psi = new ProcessStartInfo

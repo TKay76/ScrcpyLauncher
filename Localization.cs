@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "HuntLink v2.0.3 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.3 — MHO PC Launcher", "HuntLink v2.0.3 — MHO PC ランチャー");
+            A("win_title", "HuntLink v2.0.4 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.4 — MHO PC Launcher", "HuntLink v2.0.4 — MHO PC ランチャー");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
