@@ -65,6 +65,11 @@ namespace ScrcpyLauncher
         private long _manualTouchId = 0;
         private int _manualLastX = 5000;
         private int _manualLastY = 5000;
+        private int _manualDownX = 5000;
+        private int _manualDownY = 5000;
+        private DateTime _manualDownUtc = DateTime.MinValue;
+        private DateTime _lastCtrlVUtc = DateTime.MinValue;
+        private bool _escGatewayHeld = false;
 
         // Joystick state (0ms instant response + fixed slot + outer-rim 180° pivot + 15ms grace + 16ms re-down cooldown)
         private bool _joyUp, _joyDown, _joyLeft, _joyRight, _joySprint;
@@ -107,6 +112,8 @@ namespace ScrcpyLauncher
         public event Action<string> StatusMessage;
         public event Action HintToggleRequested;
         public event Action<int> ProfileSwitchRequested;
+        public event Action PasteRequested;
+        public event Action UiTapCompleted;
 
         public bool IsPaused { get { return _isPaused; } }
         public bool KeyboardOnlyAssist { get; set; }
@@ -171,6 +178,12 @@ namespace ScrcpyLauncher
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
+
+        internal Func<IntPtr> ForegroundWindowProvider { get; set; }
+        private IntPtr GetActiveForegroundWindow()
+        {
+            return ForegroundWindowProvider != null ? ForegroundWindowProvider() : GetForegroundWindow();
+        }
 
         [DllImport("user32.dll")]
         private static extern IntPtr WindowFromPoint(POINT pt);
@@ -369,7 +382,7 @@ namespace ScrcpyLauncher
         public void CheckFocusSafety()
         {
             if (!_active) return;
-            if (_targetHwnd == IntPtr.Zero || GetForegroundWindow() != _targetHwnd)
+            if (_targetHwnd == IntPtr.Zero || GetActiveForegroundWindow() != _targetHwnd)
             {
                 if (_cameraLocked) SetCameraLock(false);
                 bool anyHeld;
@@ -543,6 +556,8 @@ namespace ScrcpyLauncher
                     _client.InjectTouch(1, _rightTouchId, _profile.RightClickX, _profile.RightClickY);
                     _rightTouchId = 0;
                 }
+
+                if (_escGatewayHeld) { _escGatewayHeld = false; _client.InjectBackOrScreenOn(1); }
             }
         }
 
@@ -606,6 +621,8 @@ namespace ScrcpyLauncher
                         }
                     }
                 }
+
+                if (vk == 27 && _escGatewayHeld) { _escGatewayHeld = false; _client.InjectBackOrScreenOn(1); }
             }
         }
 
@@ -624,7 +641,7 @@ namespace ScrcpyLauncher
                     int vk = NormalizeVk((int)kb.vkCode);
 
                     // CRITICAL: If target window is NOT foreground (focus flicker, popup, Alt-Tab), ALWAYS process key UP so no touch ever stays stuck!
-                    if (GetForegroundWindow() != _targetHwnd)
+                    if (GetActiveForegroundWindow() != _targetHwnd)
                     {
                         if (isUp) ReleaseKeyOnUpUnconditional(vk);
                         return CallNextHookEx(_kbHook, nCode, wParam, lParam);
@@ -853,6 +870,50 @@ namespace ScrcpyLauncher
 
                     if ((curMods & 4) != 0 && isDown)
                         _camToggleUsedAsModifier = true;
+
+                    // Keymap Exclusive Input Gateway (active in Keymap mode where scrcpy runs --keyboard=disabled --no-clipboard-autosync):
+                    // Absorbs stray unmapped keys so MHO never blurs resolution, while bridging Ctrl+V, ESC(Back), Backspace, and Enter!
+                    if (!KeyboardOnlyAssist)
+                    {
+                        if (vk == 0x56 && curMods == 1)
+                        {
+                            if (isDown && (DateTime.UtcNow - _lastCtrlVUtc).TotalMilliseconds > 180)
+                            {
+                                _lastCtrlVUtc = DateTime.UtcNow;
+                                if (PasteRequested != null) PasteRequested();
+                            }
+                            return (IntPtr)1;
+                        }
+
+                        // Pass modifier keys, Ctrl/Alt shortcuts (Alt+Tab, Alt+F, Alt+O, Alt+I), PrintScreen(44), and OS volume/media keys(173..183)
+                        if (vk == 16 || vk == 17 || vk == 18 || (curMods & 5) != 0 || vk == 44 || (vk >= 173 && vk <= 183))
+                            return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+
+                        // Pass HuntLink global hotkeys (F2=113, F7=118, F8=119, F12=123) to WM_HOTKEY
+                        if (curMods == 0 && (vk == 113 || vk == 118 || vk == 119 || vk == 123))
+                            return CallNextHookEx(_kbHook, nCode, wParam, lParam);
+
+                        // Bridge unmapped ESC -> Android Back (no auto-repeat so holding ESC never triggers Android long-press Back).
+                        // Do NOT forward Enter(66) or Backspace(67) as raw Android KeyEvents because Unreal GameActivity
+                        // triggers ViewRootImpl.setInTouchMode(false) and blurs MHO resolution! (PC chat bar handles typing/editing.)
+                        if (curMods == 0 && vk == 27)
+                        {
+                            if (isDown && !_escGatewayHeld)
+                            {
+                                _escGatewayHeld = true;
+                                _client.InjectBackOrScreenOn(0);
+                            }
+                            else if (isUp && _escGatewayHeld)
+                            {
+                                _escGatewayHeld = false;
+                                _client.InjectBackOrScreenOn(1);
+                            }
+                            return (IntPtr)1;
+                        }
+
+                        // Swallow all remaining unmapped keys cleanly
+                        return (IntPtr)1;
+                    }
                 }
             }
             return CallNextHookEx(_kbHook, nCode, wParam, lParam);
@@ -1084,7 +1145,7 @@ namespace ScrcpyLauncher
                 return;
             if (!_cameraLocked && _wheelTouchId == 0)
                 return;
-            if (GetForegroundWindow() != _targetHwnd)
+            if (GetActiveForegroundWindow() != _targetHwnd)
                 return;
             if (dx == 0 && dy == 0) return;
 
@@ -1117,14 +1178,14 @@ namespace ScrcpyLauncher
                 // (Windows 10/11 "scroll inactive windows" sends WM_MOUSEWHEEL to hovered inactive scrcpy.exe, causing 0xc0000005 crash with --mouse=disabled!)
                 if (msg == WM_MOUSEWHEEL || msg == WM_MOUSEHWHEEL)
                 {
-                    if (GetForegroundWindow() == _targetHwnd)
+                    if (GetActiveForegroundWindow() == _targetHwnd)
                         return (IntPtr)1;
                     IntPtr hovered = WindowFromPoint(ms.pt);
                     if (hovered == _targetHwnd || (hovered != IntPtr.Zero && GetAncestor(hovered, GA_ROOT) == _targetHwnd))
                         return (IntPtr)1;
                 }
 
-                if (GetForegroundWindow() != _targetHwnd)
+                if (GetActiveForegroundWindow() != _targetHwnd)
                 {
                     // CRITICAL: Even if focus left target window, ALWAYS release any held mouse button on UP so no touch ever stays stuck!
                     if (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP || msg == WM_MBUTTONUP || msg == WM_XBUTTONUP)
@@ -1372,8 +1433,11 @@ namespace ScrcpyLauncher
                             lock (_stateLock)
                             {
                                 _manualTouchId = SLOT_MANUAL;
+                                _manualDownX = nx;
+                                _manualDownY = ny;
                                 _manualLastX = nx;
                                 _manualLastY = ny;
+                                _manualDownUtc = DateTime.UtcNow;
                                 _client.InjectTouch(0, _manualTouchId, nx, ny);
                             }
                             return (IntPtr)1;
@@ -1396,14 +1460,23 @@ namespace ScrcpyLauncher
                         }
                         else if (msg == WM_LBUTTONUP && _manualTouchId != 0)
                         {
+                            bool isCleanTap = false;
                             lock (_stateLock)
                             {
                                 if (_manualTouchId != 0)
                                 {
                                     _client.InjectTouch(1, _manualTouchId, _manualLastX, _manualLastY);
                                     _manualTouchId = 0;
+                                    if (Math.Abs(_manualLastX - _manualDownX) <= 180 &&
+                                        Math.Abs(_manualLastY - _manualDownY) <= 180 &&
+                                        (DateTime.UtcNow - _manualDownUtc).TotalMilliseconds <= 650)
+                                    {
+                                        isCleanTap = true;
+                                    }
                                 }
                             }
+                            if (isCleanTap && UiTapCompleted != null)
+                                UiTapCompleted();
                             return (IntPtr)1;
                         }
                     }

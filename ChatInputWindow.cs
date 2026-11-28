@@ -71,7 +71,7 @@ namespace ScrcpyLauncher
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock
                 {
-                    Text = "한글 채팅",
+                    Text = "채팅 · 검색",
                     FontSize = 11,
                     FontWeight = FontWeights.Bold,
                     Foreground = Brushes.White
@@ -93,7 +93,7 @@ namespace ScrcpyLauncher
             };
             _hint = new TextBlock
             {
-                Text = "메시지 입력 후 Enter (Esc 취소)",
+                Text = "한글·영문·숫자 입력 후 Enter (Esc 취소)",
                 FontSize = 12.5,
                 Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8")),
                 IsHitTestVisible = false,

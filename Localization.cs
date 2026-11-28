@@ -66,7 +66,7 @@ namespace ScrcpyLauncher
         private static void InitTable()
         {
             // Window & Header
-            A("win_title", "HuntLink v2.0.4 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.4 — MHO PC Launcher", "HuntLink v2.0.4 — MHO PC ランチャー");
+            A("win_title", "HuntLink v2.0.5 — 몬헌 아웃랜더스 PC 런처", "HuntLink v2.0.5 — MHO PC Launcher", "HuntLink v2.0.5 — MHO PC ランチャー");
             A("scrcpy_checking", "scrcpy 확인 중...", "Checking scrcpy...", "scrcpy 確認中...");
             A("scrcpy_ready", "scrcpy 준비됨", "scrcpy Ready", "scrcpy 準備完了");
             A("scrcpy_ready_ver", "scrcpy {0} 준비됨", "scrcpy {0} Ready", "scrcpy {0} 準備完了");
@@ -160,6 +160,12 @@ namespace ScrcpyLauncher
             A("batt_tip_cool", "배터리 {0}% ({2}) · 온도 {1}°C — 양호한 온도입니다. (15초마다 자동 갱신)", "Battery {0}% ({2}) · Temp {1}°C — Normal temperature. (Auto-refreshes every 15s)", "バッテリー {0}% ({2}) · 温度 {1}°C — 正常な温度です。(15秒ごとに自動更新)");
             A("batt_tip_warm", "배터리 {0}% ({2}) · 온도 {1}°C — 약간 따뜻합니다. 발열이 오르면 '폰 화면 끄기(-S)'를 켜보세요.", "Battery {0}% ({2}) · Temp {1}°C — Getting warm. Try enabling 'Turn Screen Off (-S)' to reduce heat.", "バッテリー {0}% ({2}) · 温度 {1}°C — やや発熱しています。「端末画面オフ(-S)」の併用をおすすめします。");
             A("batt_tip_hot", "배터리 {0}% ({2}) · 온도 {1}°C — 고온 주의! 발열 스로틀링으로 프레임이 떨어질 수 있으니 쿨러 사용이나 잠시 휴식을 권장합니다.", "Battery {0}% ({2}) · Temp {1}°C — High temperature! Thermal throttling may reduce FPS; cooling or a short break is recommended.", "バッテリー {0}% ({2}) · 温度 {1}°C — 高温注意！発熱によるフレーム低下の恐れがあります。冷却をおすすめします。");
+            A("batt_throttle_hot", "발열제한!", "Throttling!", "発熱制限!");
+            A("batt_throttle_warm", "발열주의", "Warm", "発熱注意");
+            A("batt_therm_detail", "세부 센서: AP {0} · 표면(SKIN) {1} · 스로틀링 단계 {2} (3 이상 시 강제 성능 제한)", "Sensors: AP {0} · SKIN {1} · Thermal Status {2} (3+ = severe throttling)", "詳細センサー: AP {0} · 表面(SKIN) {1} · スロットル段階 {2} (3以上で性能制限)");
+            A("chk_km_autochat", "입력칸 클릭 시 채팅바 자동 표시", "Auto-open Chat Bar on Input Click", "入力欄クリック時にチャットバー自動表示");
+            A("g_autochat_t", "입력칸 클릭 시 미니 채팅바 자동 표시", "Auto-Open Mini Chat Bar on Input Box Click", "入力欄クリック時のミニチャットバー自動表示");
+            A("g_autochat_b", "인게임 채팅창이나 친구 검색창 등 텍스트 입력칸을 마우스로 클릭하면 안드로이드 키보드 활성화를 자동 감지해 한글·영문 통합 입력바를 즉시 띄워줍니다. (언제든 F2로도 열 수 있습니다)", "Automatically detects when you click an in-game text box (chat, friend search, etc.) and pops up the Korean/English mini input bar. (Also accessible anytime via F2)", "ゲーム内のチャット欄やフレンド検索欄をクリックすると、入力モードを自動検知してミニ入力バーを即座に表示します（F2でも開閉可能）。");
 
             // Interactive Guides & Tooltips
             A("g_dl_t", "scrcpy 공식 다운로드", "Official scrcpy Download", "scrcpy 公式ダウンロード");

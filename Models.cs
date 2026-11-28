@@ -113,6 +113,7 @@ namespace ScrcpyLauncher
         public bool AutoMuteBackground { get; set; }
         public string VideoEncoder { get; set; }
         public int VideoBufferMs { get; set; }
+        public bool AutoChatBarOnInput { get; set; }
 
         public LauncherSettings()
         {
@@ -154,6 +155,7 @@ namespace ScrcpyLauncher
             LastWinH = 0;
             ExtraScrcpyArgs = "";
             SelectedVisualPreset = "1080p";
+            AutoChatBarOnInput = true;
         }
 
         public static string GetSettingsPath()

@@ -173,6 +173,8 @@ namespace ScrcpyLauncher
         private ChatInputWindow _chatWindow;
         private bool _isCapturingScreenshot = false;
         private bool _isConnectingKeymap = false;
+        private int _imeProbeSeq = 0;
+        private DateTime _lastChatBarClosedUtc = DateTime.MinValue;
         private DateTime _lastShareShotUtc = DateTime.MinValue;
         private const uint RID_INPUT = 0x10000003;
         private const uint RIDEV_INPUTSINK = 0x00000100;
@@ -284,6 +286,7 @@ namespace ScrcpyLauncher
         private CheckBox _chkKmRight;
         private CheckBox _chkKmRightWheel;
         private CheckBox _chkKmHints;
+        private CheckBox _chkKmAutoChat;
         private ComboBox _cmbKmToggleKey;
         private Slider _sldKmSensX;
         private TextBlock _txtKmSensXVal;
@@ -411,6 +414,8 @@ namespace ScrcpyLauncher
                     }
                 }
             }));
+            _hookEngine.PasteRequested += () => Dispatcher.BeginInvoke(new Action(() => PastePcClipboardToGame()));
+            _hookEngine.UiTapCompleted += () => Dispatcher.BeginInvoke(new Action(() => ProbeAndroidImeAndAutoOpenChatAsync()));
             LoadKeymapProfiles();
 
             string detected = AdbService.DetectDefaultDirectory(_settings.CustomScrcpyDir);
@@ -536,6 +541,7 @@ namespace ScrcpyLauncher
             _chkKmRight = (CheckBox)root.FindName("chkKmRight");
             _chkKmRightWheel = (CheckBox)root.FindName("chkKmRightWheel");
             _chkKmHints = (CheckBox)root.FindName("chkKmHints");
+            _chkKmAutoChat = (CheckBox)root.FindName("chkKmAutoChat");
             _cmbKmToggleKey = (ComboBox)root.FindName("cmbKmToggleKey");
             _sldKmSensX = (Slider)root.FindName("sldKmSensX");
             _txtKmSensXVal = (TextBlock)root.FindName("txtKmSensXVal");
@@ -758,6 +764,12 @@ namespace ScrcpyLauncher
             AttachGuide(_btnPresetNative, "g_pnat_t", "g_pnat_b");
             AttachGuide(_btnPresetWifi, "g_pwifi_t", "g_pwifi_b");
             AttachGuide(_chkAutoMuteBg, "g_amute_t", "g_amute_b");
+            AttachGuide(_chkKmAutoChat, "g_autochat_t", "g_autochat_b");
+            if (_chkKmAutoChat != null)
+            {
+                _chkKmAutoChat.Checked += (s, e) => { if (!_isInitializing) SaveSettingsFromUi(); };
+                _chkKmAutoChat.Unchecked += (s, e) => { if (!_isInitializing) SaveSettingsFromUi(); };
+            }
             AttachGuide(_chkQuestNestFirst, "g_qnest_t", "g_qnest_b");
             AttachGuide(_btnQuestBatchScan, "g_qbatch_t", "g_qbatch_b");
             AttachGuide(_txtExtraArgs, "g_extra_t", "g_extra_b");
@@ -1171,6 +1183,7 @@ namespace ScrcpyLauncher
             _chkKmRight.Content = Loc.T("chk_km_right");
             _chkKmRightWheel.Content = Loc.T("chk_km_right_wheel");
             _chkKmHints.Content = Loc.T("chk_km_hints");
+            if (_chkKmAutoChat != null) _chkKmAutoChat.Content = Loc.T("chk_km_autochat");
             SetTextByName(root, "lblCamToggle", Loc.T("lbl_cam_toggle"));
             SetTextByName(root, "lblSensX", Loc.T("lbl_sens_x"));
             SetTextByName(root, "lblSensY", Loc.T("lbl_sens_y"));
@@ -2102,12 +2115,21 @@ namespace ScrcpyLauncher
             string mode = GetControlMode();
             if (mode == "keymap")
             {
+                // Pure video/audio monitor mode: InputHookEngine + ScrcpyControlClient act as the exclusive single input gateway
+                // (prevents unmapped-key MHO resolution blur AND eliminates dual-clipboard semclipboard race conditions!)
                 args.Add("--mouse=disabled");
+                args.Add("--keyboard=disabled");
+                args.Add("--no-clipboard-autosync");
             }
             else if (mode == "gamepad")
             {
+                // Also disable SDK keyboard in Gamepad mode: live Android logcat proved any stray PC key press injects a KeyEvent
+                // that triggers ViewRootImpl.setInTouchMode(false) on Unreal GameActivity and blurs MHO resolution!
+                // (F2 Korean/English chat lazily attaches the Zero-Encoder control socket instead.)
                 args.Add("-G");
                 args.Add("--mouse-bind=-hsn:++++");
+                args.Add("--keyboard=disabled");
+                args.Add("--no-clipboard-autosync");
             }
             // Note: --keyboard=uhid is intentionally omitted so Android tablets (Galaxy Tab DeX / Lenovo Y700 / Xiaoxin ZUI)
             // never auto-switch to PC/DeX mode, Alt+O works natively, and Korean chat works cleanly via the F2 mini chat bar!
@@ -2725,7 +2747,8 @@ namespace ScrcpyLauncher
 
         private void HideFpsOverlay()
         {
-            _overlayTimer.Stop();
+            if (_scrcpyProcess == null || _scrcpyProcess.HasExited)
+                _overlayTimer.Stop();
             if (_fpsOverlay != null && _fpsOverlay.IsVisible)
                 _fpsOverlay.Hide();
             if (_keymapOverlay != null && _keymapOverlay.IsVisible)
@@ -3694,9 +3717,14 @@ namespace ScrcpyLauncher
             if (_chatWindow == null)
             {
                 _chatWindow = new ChatInputWindow();
-                _chatWindow.TextSubmitted += (text) => SendChatTextToGameAsync(text);
+                _chatWindow.TextSubmitted += (text) =>
+                {
+                    _lastChatBarClosedUtc = DateTime.UtcNow;
+                    SendChatTextToGameAsync(text);
+                };
                 _chatWindow.Cancelled += () =>
                 {
+                    _lastChatBarClosedUtc = DateTime.UtcNow;
                     if (_scrcpyProcess != null && !_scrcpyProcess.HasExited)
                     {
                         try { _scrcpyProcess.Refresh(); SetForegroundWindow(_scrcpyProcess.MainWindowHandle); } catch { }
@@ -3706,6 +3734,7 @@ namespace ScrcpyLauncher
 
             if (_chatWindow.IsVisible)
             {
+                _lastChatBarClosedUtc = DateTime.UtcNow;
                 _chatWindow.Hide();
                 if (hwnd != IntPtr.Zero) SetForegroundWindow(hwnd);
                 return;
@@ -3715,6 +3744,67 @@ namespace ScrcpyLauncher
                 _hookEngine.ReleaseForOverlay();
 
             _chatWindow.OpenForTarget(hwnd);
+        }
+
+        private void PastePcClipboardToGame()
+        {
+            try
+            {
+                if (_controlClient == null || !_controlClient.IsConnected) return;
+                if (!Clipboard.ContainsText()) return;
+                string clip = Clipboard.GetText();
+                if (string.IsNullOrEmpty(clip)) return;
+                if (_controlClient.SetClipboardAndPaste(clip))
+                    AppendLog("[클립보드] Ctrl+V 붙여넣기 완료");
+            }
+            catch { }
+        }
+
+        private async void ProbeAndroidImeAndAutoOpenChatAsync()
+        {
+            if (_chkKmAutoChat != null && _chkKmAutoChat.IsChecked != true) return;
+            if ((DateTime.UtcNow - _lastChatBarClosedUtc).TotalMilliseconds < 950) return;
+            if (_scrcpyProcess == null || _scrcpyProcess.HasExited || !_adb.IsValid) return;
+            if (_hookEngine == null || !_hookEngine.IsActive || _hookEngine.KeyboardOnlyAssist || _hookEngine.IsCameraLocked) return;
+            if (_chatWindow != null && _chatWindow.IsVisible) return;
+            var dev = _cmbDevices != null ? _cmbDevices.SelectedItem as DeviceInfo : null;
+            if (dev == null || dev.State != "device") return;
+
+            int seq = ++_imeProbeSeq;
+            try
+            {
+                // Allow ~220ms after UI tap UP for the game to focus its EditText and open Android's InputMethod
+                await Task.Delay(220);
+                if (seq != _imeProbeSeq) return;
+                if ((DateTime.UtcNow - _lastChatBarClosedUtc).TotalMilliseconds < 950) return;
+                if (_scrcpyProcess == null || _scrcpyProcess.HasExited) return;
+                if (_hookEngine == null || !_hookEngine.IsActive || _hookEngine.IsCameraLocked) return;
+                if (_chatWindow != null && _chatWindow.IsVisible) return;
+
+                _scrcpyProcess.Refresh();
+                IntPtr targetHwnd = _scrcpyProcess.MainWindowHandle;
+                if (targetHwnd == IntPtr.Zero || GetForegroundWindow() != targetHwnd) return;
+
+                var res = await _adb.RunAsync(_adb.AdbPath,
+                    string.Format("-s \"{0}\" shell \"dumpsys input_method | grep -iE 'mShowRequested=|mInputShown=|isInputShown=|mImeWindowVis='\"", dev.Serial), 1200);
+                if (seq != _imeProbeSeq) return;
+                if (_chatWindow != null && _chatWindow.IsVisible) return;
+                if (_hookEngine == null || !_hookEngine.IsActive || _hookEngine.IsCameraLocked) return;
+                if (GetForegroundWindow() != targetHwnd) return;
+
+                string txt = res.StdOut ?? "";
+                // If user just clicked outside an EditText, Android immediately sets mShowRequested=false even while keyboard animates closed!
+                if (Regex.IsMatch(txt, @"mShowRequested\s*=\s*false", RegexOptions.IgnoreCase))
+                    return;
+
+                bool imeVisible = Regex.IsMatch(txt, @"(?:mInputShown|isInputShown)\s*=\s*true", RegexOptions.IgnoreCase) ||
+                                  Regex.IsMatch(txt, @"mImeWindowVis\s*=\s*(?:0x[0-9a-f]*[2367abef]|[2367])\b", RegexOptions.IgnoreCase);
+                if (imeVisible)
+                {
+                    ToggleChatBar();
+                }
+            }
+            catch { }
         }
 
         private async void SendChatTextToGameAsync(string text)
@@ -3729,35 +3819,50 @@ namespace ScrcpyLauncher
                     hwnd = _scrcpyProcess.MainWindowHandle;
                 }
 
-                // Always copy to PC clipboard first & restore game window focus BEFORE pasting
-                // (Fixes friend search / Unity TMP_InputField boxes that drop paste if sent while unfocused!)
+                // In Pure Gamepad mode (--keyboard=disabled), lazily connect Zero-Encoder control socket on first F2 chat submit!
+                if (_controlClient != null && !_controlClient.IsConnected && GetControlMode() == "gamepad" && _adb.IsValid)
+                {
+                    var dev = _cmbDevices != null ? _cmbDevices.SelectedItem as DeviceInfo : null;
+                    if (dev != null && dev.State == "device")
+                    {
+                        await _controlClient.ConnectAsync(dev.Serial, _detectedScrcpyVersion, _activeDisplayId, _activeDisplayWidth, _activeDisplayHeight);
+                    }
+                }
+
+                // Primary path (Keymap & Gamepad modes — scrcpy runs --no-clipboard-autosync):
+                // Do NOT touch PC Clipboard so scrcpy autosync never races with semclipboard;
+                // restore game window focus first, then inject & paste through our single control socket!
+                if (_controlClient != null && _controlClient.IsConnected)
+                {
+                    if (hwnd != IntPtr.Zero)
+                    {
+                        SetForegroundWindow(hwnd);
+                        await Task.Delay(45);
+                    }
+                    if (_controlClient.SetClipboardAndPaste(text))
+                    {
+                        AppendLog("[채팅·검색] 전송 완료: " + text);
+                        return;
+                    }
+                }
+
+                // Fallback for Gamepad / Normal mode (when auxiliary control client is not connected):
+                // Set PC clipboard and send Ctrl+V to focused scrcpy window so scrcpy pastes UTF-8 directly into Android!
                 try { Clipboard.SetText(text); } catch { }
                 if (hwnd != IntPtr.Zero)
                 {
                     SetForegroundWindow(hwnd);
-                    await Task.Delay(75);
-                }
-
-                if (_controlClient != null && _controlClient.IsConnected && _controlClient.SetClipboardAndPaste(text))
-                {
-                    AppendLog("[한글 채팅] 전송 완료: " + text);
-                    return;
-                }
-
-                // Fallback for Gamepad / Normal mode (when auxiliary control client is not connected):
-                // Send Ctrl+V to focused scrcpy window so scrcpy pastes UTF-8 directly into Android!
-                if (hwnd != IntPtr.Zero)
-                {
+                    await Task.Delay(65);
                     keybd_event(0x11, 0, 0, UIntPtr.Zero);               // Ctrl down
                     keybd_event(0x56, 0, 0, UIntPtr.Zero);               // V down
                     keybd_event(0x56, 0, KEYEVENTF_KEYUP, UIntPtr.Zero); // V up
                     keybd_event(0x11, 0, KEYEVENTF_KEYUP, UIntPtr.Zero); // Ctrl up
                 }
-                AppendLog("[한글 채팅] 붙여넣기 전송 완료: " + text);
+                AppendLog("[채팅·검색] 붙여넣기 전송 완료: " + text);
             }
             catch (Exception ex)
             {
-                AppendLog("[한글 채팅 오류] " + ex.Message);
+                AppendLog("[채팅·검색 오류] " + ex.Message);
             }
         }
 
@@ -4206,6 +4311,7 @@ namespace ScrcpyLauncher
             _txtHintOpacityVal.Text = Math.Round(ho * 100) + "%";
             _sldHintScale.Value = hs;
             _txtHintScaleVal.Text = Math.Round(hs * 100) + "%";
+            if (_chkKmAutoChat != null) _chkKmAutoChat.IsChecked = _settings.AutoChatBarOnInput;
 
             SelectComboByTag(_cmbLanguage, Loc.CurrentLang, 0);
 
@@ -4248,6 +4354,7 @@ namespace ScrcpyLauncher
             _settings.RememberWindowBounds = _chkRememberWin.IsChecked == true;
             _settings.PrintFps = _chkPrintFps.IsChecked == true;
             _settings.GamepadKeyboardAssist = _chkGamepadKbAssist.IsChecked == true;
+            if (_chkKmAutoChat != null) _settings.AutoChatBarOnInput = _chkKmAutoChat.IsChecked == true;
             _settings.RecordFolder = _txtRecordFolder.Text.Trim();
             _settings.UseVirtualDisplay = _chkVirtualDisplay.IsChecked == true;
             _settings.VirtualDisplaySpec = _cmbVdSpec.Text.Trim();

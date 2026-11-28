@@ -543,6 +543,7 @@ namespace ScrcpyLauncher
                 <CheckBox x:Name='chkKmRight' Content='우클릭 보조'/>
                 <CheckBox x:Name='chkKmRightWheel' Content='우클릭 휠드래그'/>
                 <CheckBox x:Name='chkKmHints' Content='화면 키 힌트' IsChecked='True'/>
+                <CheckBox x:Name='chkKmAutoChat' Content='입력칸 클릭 시 채팅바 자동 표시' IsChecked='True'/>
               </WrapPanel>
               <Grid Margin='0,0,0,9'>
                 <Grid.ColumnDefinitions>

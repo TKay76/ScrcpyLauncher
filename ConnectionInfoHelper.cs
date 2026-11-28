@@ -19,6 +19,9 @@ namespace ScrcpyLauncher
     {
         public int Level;
         public double TempC;
+        public double ApTempC;
+        public double SkinTempC;
+        public int ThermalStatus;  // 0=None, 1=Light, 2=Moderate, 3=Severe, 4+=Critical
         public bool IsCharging;
         public string Tier;        // "cool", "warm", "hot"
         public string BadgeText;
@@ -395,47 +398,133 @@ namespace ScrcpyLauncher
 
             try
             {
-                var res = await adb.RunAsync(adb.AdbPath, string.Format("-s \"{0}\" shell dumpsys battery", dev.Serial), 2500);
-                string txt = res.StdOut ?? "";
-                if (string.IsNullOrWhiteSpace(txt)) return null;
-
-                var mLevel = Regex.Match(txt, @"^\s*level:\s*(\d+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                var mTemp = Regex.Match(txt, @"^\s*temperature:\s*(-?\d+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                if (!mLevel.Success && !mTemp.Success) return null;
-
-                int level = mLevel.Success ? int.Parse(mLevel.Groups[1].Value) : -1;
-                double tempC = mTemp.Success ? (int.Parse(mTemp.Groups[1].Value) / 10.0) : -1.0;
-
-                bool ac = Regex.IsMatch(txt, @"AC powered:\s*true", RegexOptions.IgnoreCase);
-                bool usb = Regex.IsMatch(txt, @"USB powered:\s*true", RegexOptions.IgnoreCase);
-                bool wl = Regex.IsMatch(txt, @"Wireless powered:\s*true", RegexOptions.IgnoreCase);
-                bool stChg = Regex.IsMatch(txt, @"^\s*status:\s*(2|5)\b", RegexOptions.Multiline | RegexOptions.IgnoreCase);
-                bool charging = ac || usb || wl || stChg;
-
-                string tier = tempC >= 43.0 ? "hot" : (tempC >= 39.0 ? "warm" : "cool");
-                string icon = charging ? "⚡" : "🔋";
-                string badge = (level >= 0 && tempC > 0)
-                    ? string.Format("{0} {1}% · {2:0.0}°C", icon, level, tempC)
-                    : (level >= 0 ? string.Format("{0} {1}%", icon, level) : string.Format("🌡 {0:0.0}°C", tempC));
-
-                string stateTxt = charging ? Loc.T("batt_charging") : Loc.T("batt_discharging");
-                string tipKey = tier == "hot" ? "batt_tip_hot" : (tier == "warm" ? "batt_tip_warm" : "batt_tip_cool");
-                string tip = Loc.F(tipKey, level >= 0 ? level.ToString() : "?", tempC > 0 ? tempC.ToString("0.0") : "?", stateTxt);
-
-                return new BatteryLinkInfo
-                {
-                    Level = level,
-                    TempC = tempC,
-                    IsCharging = charging,
-                    Tier = tier,
-                    BadgeText = badge,
-                    TooltipText = tip
-                };
+                var res = await adb.RunAsync(adb.AdbPath, string.Format("-s \"{0}\" shell \"dumpsys battery; echo ===THERM===; dumpsys thermalservice 2>/dev/null\"", dev.Serial), 3000);
+                return ParseBatteryAndThermal(res.StdOut ?? "");
             }
             catch
             {
                 return null;
             }
+        }
+
+        public static BatteryLinkInfo ParseBatteryAndThermal(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+
+            string battTxt = raw;
+            string thermTxt = "";
+            int splitIdx = raw.IndexOf("===THERM===", StringComparison.Ordinal);
+            if (splitIdx >= 0)
+            {
+                battTxt = raw.Substring(0, splitIdx);
+                thermTxt = raw.Substring(splitIdx + 11);
+            }
+
+            var mLevel = Regex.Match(battTxt, @"^\s*level:\s*(\d+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            var mTemp = Regex.Match(battTxt, @"^\s*temperature:\s*(-?\d+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            if (!mLevel.Success && !mTemp.Success) return null;
+
+            int level = mLevel.Success ? int.Parse(mLevel.Groups[1].Value) : -1;
+            double tempC = mTemp.Success ? (int.Parse(mTemp.Groups[1].Value) / 10.0) : -1.0;
+
+            bool ac = Regex.IsMatch(battTxt, @"AC powered:\s*true", RegexOptions.IgnoreCase);
+            bool usb = Regex.IsMatch(battTxt, @"USB powered:\s*true", RegexOptions.IgnoreCase);
+            bool wl = Regex.IsMatch(battTxt, @"Wireless powered:\s*true", RegexOptions.IgnoreCase);
+            bool stChg = Regex.IsMatch(battTxt, @"^\s*status:\s*(2|5)\b", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            bool charging = ac || usb || wl || stChg;
+
+            // Parse live AP (mType=0) & SKIN (mType=3) temperatures and Android thermal throttling status
+            double apTempC = -1.0;
+            double skinTempC = -1.0;
+            int thermalStatus = 0;
+
+            if (!string.IsNullOrEmpty(thermTxt))
+            {
+                // Android 10-12: "Current Status: N", Android 13-16 (AIDL): "Thermal Status: N"
+                var mCurSt = Regex.Match(thermTxt, @"^\s*(?:Thermal|Current)\s+Status\s*:\s*(\d+)", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+                if (mCurSt.Success)
+                {
+                    int cs;
+                    if (int.TryParse(mCurSt.Groups[1].Value, out cs) && cs > thermalStatus)
+                        thermalStatus = cs;
+                }
+
+                // Prefer live "Current temperatures from HAL:" over stale "Cached temperatures:"
+                // ("Cached temperatures:" only updates on threshold callbacks and freezes AP at old peaks!)
+                string sensorSection = thermTxt;
+                var mHalSec = Regex.Match(thermTxt, @"Current\s+temperatures\s+from\s+HAL\s*:", RegexOptions.IgnoreCase);
+                if (mHalSec.Success)
+                {
+                    string afterHal = thermTxt.Substring(mHalSec.Index + mHalSec.Length);
+                    var mNextSec = Regex.Match(afterHal, @"(?:Current\s+cooling\s+devices|Temperature\s+static\s+thresholds|Temperature\s+headroom)", RegexOptions.IgnoreCase);
+                    string halBlock = mNextSec.Success ? afterHal.Substring(0, mNextSec.Index) : afterHal;
+                    if (halBlock.IndexOf("Temperature{", StringComparison.Ordinal) >= 0)
+                        sensorSection = halBlock;
+                }
+
+                var tMatches = Regex.Matches(sensorSection, @"Temperature\{mValue=([0-9.\-]+),\s*mType=(\d+),\s*mName=([^,]+),\s*mStatus=(\d+)\}");
+                foreach (Match tm in tMatches)
+                {
+                    double val;
+                    int mtype, mst;
+                    if (!double.TryParse(tm.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out val))
+                        continue;
+                    if (!int.TryParse(tm.Groups[2].Value, out mtype)) continue;
+                    if (!int.TryParse(tm.Groups[4].Value, out mst)) mst = 0;
+
+                    if (val < 10.0 || val > 115.0) continue; // Ignore bogus/uncalibrated sensors
+                    if (mtype == 0 && val > apTempC) apTempC = val;
+                    if (mtype == 3 && val > skinTempC) skinTempC = val;
+                    // Track throttling severity from CPU(0), GPU(1), BAT(2), SKIN(3), NPU(9)
+                    if ((mtype == 0 || mtype == 1 || mtype == 2 || mtype == 3 || mtype == 9) && mst > thermalStatus)
+                        thermalStatus = mst;
+                }
+            }
+
+            bool severeThrottle = (thermalStatus >= 3) || (tempC >= 43.0) || (skinTempC >= 44.0);
+            bool moderateThrottle = !severeThrottle && ((thermalStatus == 2) || (tempC >= 39.0) || (skinTempC >= 41.0));
+            string tier = severeThrottle ? "hot" : (moderateThrottle ? "warm" : "cool");
+
+            string icon = severeThrottle ? "🔥" : (charging ? "⚡" : "🔋");
+
+            // When throttling is triggered by SKIN/SoC heat while battery is cooler (e.g. foldables), show the hotter SKIN/AP sensor on the badge
+            string tempDisplay = tempC > 0 ? string.Format("{0:0.0}°C", tempC) : "";
+            if ((severeThrottle || moderateThrottle) && skinTempC > 0 && skinTempC > tempC + 1.5)
+                tempDisplay = string.Format("SKIN {0:0.0}°C", skinTempC);
+            else if ((severeThrottle || moderateThrottle) && skinTempC <= 0 && apTempC >= 55.0 && tempC < 40.0)
+                tempDisplay = string.Format("AP {0:0.0}°C", apTempC);
+
+            string badgeBase = (level >= 0 && !string.IsNullOrEmpty(tempDisplay))
+                ? string.Format("{0} {1}% · {2}", icon, level, tempDisplay)
+                : (level >= 0 ? string.Format("{0} {1}%", icon, level) : string.Format("🌡 {0}", tempDisplay));
+
+            string badge = severeThrottle
+                ? (badgeBase + " · " + Loc.T("batt_throttle_hot"))
+                : (moderateThrottle ? (badgeBase + " · " + Loc.T("batt_throttle_warm")) : badgeBase);
+
+            string stateTxt = charging ? Loc.T("batt_charging") : Loc.T("batt_discharging");
+            string tipKey = tier == "hot" ? "batt_tip_hot" : (tier == "warm" ? "batt_tip_warm" : "batt_tip_cool");
+            string tip = Loc.F(tipKey, level >= 0 ? level.ToString() : "?", tempC > 0 ? tempC.ToString("0.0") : "?", stateTxt);
+
+            if (apTempC > 0 || skinTempC > 0 || thermalStatus > 0)
+            {
+                string apStr = apTempC > 0 ? (apTempC.ToString("0.0") + "°C") : "-";
+                string skinStr = skinTempC > 0 ? (skinTempC.ToString("0.0") + "°C") : "-";
+                tip += "\n" + Loc.F("batt_therm_detail", apStr, skinStr, thermalStatus);
+            }
+
+            return new BatteryLinkInfo
+            {
+                Level = level,
+                TempC = tempC,
+                ApTempC = apTempC,
+                SkinTempC = skinTempC,
+                ThermalStatus = thermalStatus,
+                IsCharging = charging,
+                Tier = tier,
+                BadgeText = badge,
+                TooltipText = tip
+            };
         }
     }
 }
